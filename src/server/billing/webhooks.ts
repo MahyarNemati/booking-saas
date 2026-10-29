@@ -28,7 +28,10 @@ const uuid = z.uuid();
  * timestamp of the event that last wrote them; older events are discarded so
  * out-of-order delivery cannot regress state.
  */
-export function handleStripeEvent(deps: WebhookDeps, event: Stripe.Event): Promise<WebhookOutcome> {
+export function handleStripeEvent(
+  deps: WebhookDeps,
+  event: Stripe.Event,
+): Promise<WebhookOutcome> {
   return deps.db.transaction(async (tx) => {
     const fresh = await tx
       .insert(stripeEvents)
@@ -40,12 +43,19 @@ export function handleStripeEvent(deps: WebhookDeps, event: Stripe.Event): Promi
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        if (session.mode !== "subscription" || !session.subscription) return "ignored";
+        if (session.mode !== "subscription" || !session.subscription)
+          return "ignored";
         const sub =
           typeof session.subscription === "string"
             ? await deps.billing.retrieveSubscription(session.subscription)
             : session.subscription;
-        return applySubscription(tx, deps, sub, event, session.client_reference_id);
+        return applySubscription(
+          tx,
+          deps,
+          sub,
+          event,
+          session.client_reference_id,
+        );
       }
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -64,7 +74,8 @@ async function resolveOrgId(
 ): Promise<string | null> {
   const candidate = hint ?? sub.metadata?.org_id ?? null;
   if (candidate && uuid.safeParse(candidate).success) return candidate;
-  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  const customerId =
+    typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   const [org] = await tx
     .select({ id: organizations.id })
     .from(organizations)
@@ -82,20 +93,28 @@ async function applySubscription(
 ): Promise<WebhookOutcome> {
   const orgId = await resolveOrgId(tx, sub, orgHint);
   if (!orgId) {
-    deps.logger.warn({ eventId: event.id, subscription: sub.id }, "stripe event for unknown org");
+    deps.logger.warn(
+      { eventId: event.id, subscription: sub.id },
+      "stripe event for unknown org",
+    );
     return "ignored";
   }
   const item = sub.items.data[0];
   const priceId = item?.price.id;
   const plan = priceId ? planForPrice(deps.prices, priceId) : null;
   if (!item || !priceId || !plan) {
-    deps.logger.warn({ eventId: event.id, priceId }, "stripe event for unknown price");
+    deps.logger.warn(
+      { eventId: event.id, priceId },
+      "stripe event for unknown price",
+    );
     return "ignored";
   }
 
-  const status = event.type === "customer.subscription.deleted" ? "canceled" : sub.status;
+  const status =
+    event.type === "customer.subscription.deleted" ? "canceled" : sub.status;
   const eventAt = new Date(event.created * 1000);
-  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  const customerId =
+    typeof sub.customer === "string" ? sub.customer : sub.customer.id;
 
   // Everything below runs under RLS for the resolved org.
   await enterTenant(tx, { orgId });
@@ -107,7 +126,9 @@ async function applySubscription(
     plan,
     status,
     seats: item.quantity ?? 1,
-    currentPeriodEnd: item.current_period_end ? new Date(item.current_period_end * 1000) : null,
+    currentPeriodEnd: item.current_period_end
+      ? new Date(item.current_period_end * 1000)
+      : null,
     cancelAtPeriodEnd: sub.cancel_at_period_end,
     lastEventAt: eventAt,
     updatedAt: new Date(),
@@ -132,7 +153,10 @@ async function applySubscription(
       // Ignore stale events, and never let a dead subscription overwrite its live replacement.
       setWhere: and(
         lte(subscriptions.lastEventAt, eventAt),
-        or(eq(subscriptions.stripeSubscriptionId, sub.id), inArray(sql`excluded.status`, ENTITLED)),
+        or(
+          eq(subscriptions.stripeSubscriptionId, sub.id),
+          inArray(sql`excluded.status`, ENTITLED),
+        ),
       ),
     })
     .returning({ orgId: subscriptions.orgId });
@@ -142,7 +166,9 @@ async function applySubscription(
   await tx
     .update(organizations)
     .set({ stripeCustomerId: customerId })
-    .where(and(eq(organizations.id, orgId), isNull(organizations.stripeCustomerId)));
+    .where(
+      and(eq(organizations.id, orgId), isNull(organizations.stripeCustomerId)),
+    );
 
   await recordAudit(tx, {
     orgId,
@@ -151,6 +177,9 @@ async function applySubscription(
     target: { type: "subscription", id: sub.id },
     metadata: { plan, status, seats: row.seats, event: event.type },
   });
-  deps.logger.info({ eventId: event.id, orgId, plan, status }, "subscription synced");
+  deps.logger.info(
+    { eventId: event.id, orgId, plan, status },
+    "subscription synced",
+  );
   return "processed";
 }

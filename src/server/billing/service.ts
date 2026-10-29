@@ -10,7 +10,9 @@ import { entitlementsFor, type Entitlements, type PriceCatalog } from "./plans";
 import type { BillingProvider } from "./provider";
 import { countSeats } from "./seats";
 
-export async function getSubscription(tx: Executor): Promise<Subscription | null> {
+export async function getSubscription(
+  tx: Executor,
+): Promise<Subscription | null> {
   const [row] = await tx.select().from(subscriptions).limit(1);
   return row ?? null;
 }
@@ -38,14 +40,22 @@ export async function startCheckout(
 ): Promise<string> {
   assertCan(input.actor, "billing:manage");
   const priceId = deps.prices[input.plan];
-  if (!priceId) throw new AppError("invalid", `no price configured for ${input.plan}`);
+  if (!priceId)
+    throw new AppError("invalid", `no price configured for ${input.plan}`);
 
-  const { org, seats } = await withTenant(deps.db, { orgId: input.orgId }, async (tx) => {
-    const [o] = await tx.select().from(organizations).where(eq(organizations.id, input.orgId));
-    if (!o) throw new AppError("not_found", "organization not found");
-    const s = await countSeats(tx);
-    return { org: o, seats: s.members };
-  });
+  const { org, seats } = await withTenant(
+    deps.db,
+    { orgId: input.orgId },
+    async (tx) => {
+      const [o] = await tx
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, input.orgId));
+      if (!o) throw new AppError("not_found", "organization not found");
+      const s = await countSeats(tx);
+      return { org: o, seats: s.members };
+    },
+  );
 
   let customerId = org.stripeCustomerId;
   if (!customerId) {
@@ -79,7 +89,10 @@ export async function openPortal(
 ): Promise<string> {
   assertCan(input.actor, "billing:manage");
   const org = await withTenant(deps.db, { orgId: input.orgId }, async (tx) => {
-    const [o] = await tx.select().from(organizations).where(eq(organizations.id, input.orgId));
+    const [o] = await tx
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, input.orgId));
     return o;
   });
   if (!org?.stripeCustomerId)
@@ -96,17 +109,28 @@ export async function openPortal(
  * membership change or a manual portal edit reconciles it.
  */
 export async function syncSeatQuantity(
-  deps: { db: Database; billing: BillingProvider; logger: Pick<Logger, "warn" | "info"> },
+  deps: {
+    db: Database;
+    billing: BillingProvider;
+    logger: Pick<Logger, "warn" | "info">;
+  },
   orgId: string,
 ): Promise<void> {
   const state = await withTenant(deps.db, { orgId }, async (tx) => ({
     sub: await getSubscription(tx),
     seats: await countSeats(tx),
   }));
-  if (!state.sub || state.sub.status === "canceled" || state.sub.seats === state.seats.members)
+  if (
+    !state.sub ||
+    state.sub.status === "canceled" ||
+    state.sub.seats === state.seats.members
+  )
     return;
   try {
-    await deps.billing.updateSeatQuantity(state.sub.stripeSubscriptionId, state.seats.members);
+    await deps.billing.updateSeatQuantity(
+      state.sub.stripeSubscriptionId,
+      state.seats.members,
+    );
     await withTenant(deps.db, { orgId }, (tx) =>
       recordAudit(tx, {
         orgId,

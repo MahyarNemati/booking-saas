@@ -119,7 +119,9 @@ describe("intersect", () => {
   });
 
   it("handles one interval spanning many on the other side", () => {
-    expect(pairs(intersect([at(0, 100)], [at(1, 2), at(5, 6), at(50, 60)]))).toEqual([
+    expect(
+      pairs(intersect([at(0, 100)], [at(1, 2), at(5, 6), at(50, 60)])),
+    ).toEqual([
       [1, 2],
       [5, 6],
       [50, 60],
@@ -152,7 +154,9 @@ describe("subtract", () => {
 
   it("handles one removal spanning several spans", () => {
     // The case a single cursor walking both lists in lockstep gets wrong.
-    expect(pairs(subtract([at(1, 2), at(3, 4), at(5, 6)], [at(0, 10)]))).toEqual([]);
+    expect(
+      pairs(subtract([at(1, 2), at(3, 4), at(5, 6)], [at(0, 10)])),
+    ).toEqual([]);
     expect(pairs(subtract([at(1, 4), at(5, 8)], [at(2, 6)]))).toEqual([
       [1, 2],
       [6, 8],
@@ -160,7 +164,9 @@ describe("subtract", () => {
   });
 
   it("handles several removals inside one span", () => {
-    expect(pairs(subtract([at(0, 20)], [at(2, 4), at(6, 8), at(18, 19)]))).toEqual([
+    expect(
+      pairs(subtract([at(0, 20)], [at(2, 4), at(6, 8), at(18, 19)])),
+    ).toEqual([
       [0, 2],
       [4, 6],
       [8, 18],
@@ -267,7 +273,10 @@ describe("slice", () => {
 // up as an occasional double booking, which is the hardest kind to reproduce.
 describe("properties", () => {
   const anInterval = fc
-    .tuple(fc.integer({ min: -500, max: 500 }), fc.integer({ min: 0, max: 200 }))
+    .tuple(
+      fc.integer({ min: -500, max: 500 }),
+      fc.integer({ min: 0, max: 200 }),
+    )
     .map(([start, length]) => at(start, start + length));
   const aSet = fc.array(anInterval, { maxLength: 12 });
 
@@ -321,9 +330,9 @@ describe("properties", () => {
     // the original, so nothing is lost by accident.
     fc.assert(
       fc.property(aSet, aSet, (a, b) => {
-        expect(totalDuration(subtract(a, b)) + totalDuration(intersect(a, b))).toBe(
-          totalDuration(a),
-        );
+        expect(
+          totalDuration(subtract(a, b)) + totalDuration(intersect(a, b)),
+        ).toBe(totalDuration(a));
       }),
     );
   });

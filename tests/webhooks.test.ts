@@ -24,11 +24,17 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
     billing = new FakeBilling();
     deps = { db, billing, prices, logger: quiet };
     const user = await createUser(db, "owner");
-    orgId = (await createOrganization(db, { userId: user.id, name: "Billing Co" })).id;
+    orgId = (
+      await createOrganization(db, { userId: user.id, name: "Billing Co" })
+    ).id;
   });
 
   const readSub = () =>
-    withTenant(db, { orgId }, async (tx) => (await tx.select().from(subscriptions))[0] ?? null);
+    withTenant(
+      db,
+      { orgId },
+      async (tx) => (await tx.select().from(subscriptions))[0] ?? null,
+    );
 
   it("activates a plan from checkout.session.completed", async () => {
     const sub = fakeSubscription({
@@ -67,7 +73,10 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
     expect(outcomes.filter((o) => o === "duplicate")).toHaveLength(2);
 
     const audits = await withTenant(db, { orgId }, (tx) =>
-      tx.select().from(auditLogs).where(eq(auditLogs.action, "billing.subscription_synced")),
+      tx
+        .select()
+        .from(auditLogs)
+        .where(eq(auditLogs.action, "billing.subscription_synced")),
     );
     expect(audits).toHaveLength(1);
   });
@@ -77,12 +86,24 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
     const now = Math.floor(Date.now() / 1000);
     const newer = fakeEvent(
       "customer.subscription.updated",
-      fakeSubscription({ id, customer: "cus_3", orgId, priceId: "price_ent", quantity: 9 }),
+      fakeSubscription({
+        id,
+        customer: "cus_3",
+        orgId,
+        priceId: "price_ent",
+        quantity: 9,
+      }),
       now,
     );
     const older = fakeEvent(
       "customer.subscription.updated",
-      fakeSubscription({ id, customer: "cus_3", orgId, priceId: "price_pro", quantity: 2 }),
+      fakeSubscription({
+        id,
+        customer: "cus_3",
+        orgId,
+        priceId: "price_pro",
+        quantity: 2,
+      }),
       now - 60,
     );
     expect(await handleStripeEvent(deps, newer)).toBe("processed");
@@ -98,8 +119,14 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
       priceId: "price_pro",
     });
     const now = Math.floor(Date.now() / 1000);
-    await handleStripeEvent(deps, fakeEvent("customer.subscription.created", sub, now - 10));
-    await handleStripeEvent(deps, fakeEvent("customer.subscription.deleted", sub, now));
+    await handleStripeEvent(
+      deps,
+      fakeEvent("customer.subscription.created", sub, now - 10),
+    );
+    await handleStripeEvent(
+      deps,
+      fakeEvent("customer.subscription.deleted", sub, now),
+    );
     expect((await readSub())?.status).toBe("canceled");
   });
 
@@ -117,13 +144,19 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
       orgId,
       priceId: "price_ent",
     });
-    await handleStripeEvent(deps, fakeEvent("customer.subscription.created", newSub, now - 5));
+    await handleStripeEvent(
+      deps,
+      fakeEvent("customer.subscription.created", newSub, now - 5),
+    );
     const outcome = await handleStripeEvent(
       deps,
       fakeEvent("customer.subscription.deleted", oldSub, now),
     );
     expect(outcome).toBe("stale");
-    expect(await readSub()).toMatchObject({ stripeSubscriptionId: newSub.id, status: "active" });
+    expect(await readSub()).toMatchObject({
+      stripeSubscriptionId: newSub.id,
+      status: "active",
+    });
   });
 
   it("ignores prices that are not in the catalog and unrelated event types", async () => {
@@ -133,10 +166,15 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
       orgId,
       priceId: "price_unknown",
     });
-    expect(await handleStripeEvent(deps, fakeEvent("customer.subscription.created", sub))).toBe(
+    expect(
+      await handleStripeEvent(
+        deps,
+        fakeEvent("customer.subscription.created", sub),
+      ),
+    ).toBe("ignored");
+    expect(await handleStripeEvent(deps, fakeEvent("invoice.paid", {}))).toBe(
       "ignored",
     );
-    expect(await handleStripeEvent(deps, fakeEvent("invoice.paid", {}))).toBe("ignored");
     expect(await readSub()).toBeNull();
   });
 
@@ -159,23 +197,40 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
         orgId,
         priceId: "price_pro",
       });
-      const payload = JSON.stringify(fakeEvent("customer.subscription.created", sub));
-      const signature = signer.webhooks.generateTestHeaderString({ payload, secret });
+      const payload = JSON.stringify(
+        fakeEvent("customer.subscription.created", sub),
+      );
+      const signature = signer.webhooks.generateTestHeaderString({
+        payload,
+        secret,
+      });
       const res = await handleWebhookRequest(post(payload, signature), {
         ...deps,
         billing: provider,
         logger: quiet,
       });
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ received: true, outcome: "processed" });
+      expect(await res.json()).toEqual({
+        received: true,
+        outcome: "processed",
+      });
     });
 
     it("rejects a missing or forged signature", async () => {
-      const payload = JSON.stringify(fakeEvent("customer.subscription.created", {}));
-      const forged = signer.webhooks.generateTestHeaderString({ payload, secret: "whsec_wrong" });
+      const payload = JSON.stringify(
+        fakeEvent("customer.subscription.created", {}),
+      );
+      const forged = signer.webhooks.generateTestHeaderString({
+        payload,
+        secret: "whsec_wrong",
+      });
       const handlerDeps = { ...deps, billing: provider, logger: quiet };
-      expect((await handleWebhookRequest(post(payload), handlerDeps)).status).toBe(400);
-      expect((await handleWebhookRequest(post(payload, forged), handlerDeps)).status).toBe(400);
+      expect(
+        (await handleWebhookRequest(post(payload), handlerDeps)).status,
+      ).toBe(400);
+      expect(
+        (await handleWebhookRequest(post(payload, forged), handlerDeps)).status,
+      ).toBe(400);
     });
 
     it("rejects a payload altered after signing", async () => {
@@ -185,8 +240,13 @@ describe.skipIf(!hasDatabase)("stripe webhooks", () => {
         orgId,
         priceId: "price_pro",
       });
-      const payload = JSON.stringify(fakeEvent("customer.subscription.created", sub));
-      const signature = signer.webhooks.generateTestHeaderString({ payload, secret });
+      const payload = JSON.stringify(
+        fakeEvent("customer.subscription.created", sub),
+      );
+      const signature = signer.webhooks.generateTestHeaderString({
+        payload,
+        secret,
+      });
       const tampered = payload.replace("price_pro", "price_ent");
       const res = await handleWebhookRequest(post(tampered, signature), {
         ...deps,

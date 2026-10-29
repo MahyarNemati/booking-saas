@@ -71,7 +71,10 @@ const thirtyMinutes: ServicePolicy = { durationMinutes: 30, stepMinutes: 30 };
 const anyone: Resource = { id: "staff-a" };
 
 /** A query over one London day, with `now` far enough back to be irrelevant. */
-function onDay(date: string, overrides: Partial<AvailabilityQuery> = {}): AvailabilityQuery {
+function onDay(
+  date: string,
+  overrides: Partial<AvailabilityQuery> = {},
+): AvailabilityQuery {
   const day = parseDate(date);
   const start = startOfDay(day, LONDON);
   return {
@@ -116,31 +119,61 @@ describe("availableSlots", () => {
   });
 
   it("removes a slot taken by an existing appointment", () => {
-    const busy = [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }];
-    expect(times(availableSlots(onDay("2026-06-01", { resources: [{ ...anyone, busy }] })))).toEqual([
-      "09:00",
-      "09:30",
-      "10:30",
-      "11:00",
-      "11:30",
-    ]);
+    const busy = [
+      {
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 10:30"),
+        },
+      },
+    ];
+    expect(
+      times(
+        availableSlots(
+          onDay("2026-06-01", { resources: [{ ...anyone, busy }] }),
+        ),
+      ),
+    ).toEqual(["09:00", "09:30", "10:30", "11:00", "11:30"]);
   });
 
   it("still offers the slot that ends when an appointment starts", () => {
     // The half-open interval earning its keep: 09:30-10:00 does not clash
     // with 10:00-10:30.
-    const busy = [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }];
-    expect(times(availableSlots(onDay("2026-06-01", { resources: [{ ...anyone, busy }] })))).toContain(
-      "09:30",
-    );
+    const busy = [
+      {
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 10:30"),
+        },
+      },
+    ];
+    expect(
+      times(
+        availableSlots(
+          onDay("2026-06-01", { resources: [{ ...anyone, busy }] }),
+        ),
+      ),
+    ).toContain("09:30");
   });
 
   it("offers nothing between two appointments separated by less than the duration", () => {
     const busy = [
-      { interval: { start: london("2026-06-01 09:00"), end: london("2026-06-01 10:00") } },
-      { interval: { start: london("2026-06-01 10:15"), end: london("2026-06-01 11:00") } },
+      {
+        interval: {
+          start: london("2026-06-01 09:00"),
+          end: london("2026-06-01 10:00"),
+        },
+      },
+      {
+        interval: {
+          start: london("2026-06-01 10:15"),
+          end: london("2026-06-01 11:00"),
+        },
+      },
     ];
-    const slots = times(availableSlots(onDay("2026-06-01", { resources: [{ ...anyone, busy }] })));
+    const slots = times(
+      availableSlots(onDay("2026-06-01", { resources: [{ ...anyone, busy }] })),
+    );
     expect(slots).toEqual(["11:00", "11:30"]);
   });
 });
@@ -159,14 +192,20 @@ describe("buffers", () => {
     // own buffers, so it clashes; so does 10:30.
     const busy = [
       {
-        interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") },
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 10:30"),
+        },
         bufferBeforeMinutes: 15,
         bufferAfterMinutes: 15,
       },
     ];
     const slots = times(
       availableSlots(
-        onDay("2026-06-01", { service: withBuffers, resources: [{ ...anyone, busy }] }),
+        onDay("2026-06-01", {
+          service: withBuffers,
+          resources: [{ ...anyone, busy }],
+        }),
       ),
     );
     expect(slots).not.toContain("09:30");
@@ -180,7 +219,9 @@ describe("buffers", () => {
     // Cleaning up after the last customer of the day is allowed: the
     // appointment has to finish by closing, the buffer does not. Requiring
     // the buffer to fit would silently lose the last slot of every day.
-    const slots = times(availableSlots(onDay("2026-06-01", { service: withBuffers })));
+    const slots = times(
+      availableSlots(onDay("2026-06-01", { service: withBuffers })),
+    );
     expect(slots).toContain("11:30");
   });
 
@@ -191,14 +232,21 @@ describe("buffers", () => {
     // after a 09:30 finish, making 10:00 the first bookable start.
     const busy = [
       {
-        interval: { start: london("2026-06-01 09:00"), end: london("2026-06-01 09:30") },
+        interval: {
+          start: london("2026-06-01 09:00"),
+          end: london("2026-06-01 09:30"),
+        },
         bufferAfterMinutes: 15,
       },
     ];
     const slots = times(
       availableSlots(
         onDay("2026-06-01", {
-          service: { durationMinutes: 30, stepMinutes: 15, bufferBeforeMinutes: 15 },
+          service: {
+            durationMinutes: 30,
+            stepMinutes: 15,
+            bufferBeforeMinutes: 15,
+          },
           resources: [{ ...anyone, busy }],
         }),
       ),
@@ -212,7 +260,10 @@ describe("buffers", () => {
     // query against an existing appointment that declares no trailing buffer
     // and one that declares fifteen minutes must differ by exactly those
     // fifteen minutes, and nothing more.
-    const appointment = { start: london("2026-06-01 09:00"), end: london("2026-06-01 09:30") };
+    const appointment = {
+      start: london("2026-06-01 09:00"),
+      end: london("2026-06-01 09:30"),
+    };
     const service: ServicePolicy = {
       durationMinutes: 30,
       stepMinutes: 15,
@@ -224,7 +275,12 @@ describe("buffers", () => {
         availableSlots(
           onDay("2026-06-01", {
             service,
-            resources: [{ ...anyone, busy: [{ interval: appointment, bufferAfterMinutes }] }],
+            resources: [
+              {
+                ...anyone,
+                busy: [{ interval: appointment, bufferAfterMinutes }],
+              },
+            ],
           }),
         ),
       )[0];
@@ -247,12 +303,18 @@ describe("notice and advance limits", () => {
     };
     // Now is 09:05 and an hour's notice is needed, so the first bookable slot
     // is the first one starting at or after 10:05 — which is 10:30.
-    expect(times(availableSlots(onDay("2026-06-01", { service, now })))).toEqual(["10:30", "11:00", "11:30"]);
+    expect(
+      times(availableSlots(onDay("2026-06-01", { service, now }))),
+    ).toEqual(["10:30", "11:00", "11:30"]);
   });
 
   it("refuses a slot beyond the maximum advance", () => {
     const now = london("2026-06-01 08:00");
-    const service: ServicePolicy = { durationMinutes: 30, stepMinutes: 30, maximumAdvanceDays: 2 };
+    const service: ServicePolicy = {
+      durationMinutes: 30,
+      stepMinutes: 30,
+      maximumAdvanceDays: 2,
+    };
     const start = startOfDay(parseDate("2026-06-01"), LONDON);
     const slots = availableSlots({
       ...onDay("2026-06-01", { service, now }),
@@ -267,13 +329,20 @@ describe("notice and advance limits", () => {
 
   it("computes the bookable window from now", () => {
     const now = 1_000_000;
-    expect(bookableWindow({ durationMinutes: 30, stepMinutes: 30 }, now)).toEqual({
+    expect(
+      bookableWindow({ durationMinutes: 30, stepMinutes: 30 }, now),
+    ).toEqual({
       start: now,
       end: Number.MAX_SAFE_INTEGER,
     });
     expect(
       bookableWindow(
-        { durationMinutes: 30, stepMinutes: 30, minimumNoticeMinutes: 10, maximumAdvanceDays: 1 },
+        {
+          durationMinutes: 30,
+          stepMinutes: 30,
+          minimumNoticeMinutes: 10,
+          maximumAdvanceDays: 1,
+        },
         now,
       ),
     ).toEqual({ start: now + 10 * MINUTE, end: now + 24 * 60 * MINUTE });
@@ -288,11 +357,17 @@ describe("daylight saving", () => {
       zone: LONDON,
       weekly: [{ weekday: 0, startMinute: 9 * 60, endMinute: 12 * 60 }],
     };
-    const before = availableSlots(onDay("2026-03-22", { schedule: sundayMornings }));
-    const during = availableSlots(onDay("2026-03-29", { schedule: sundayMornings }));
+    const before = availableSlots(
+      onDay("2026-03-22", { schedule: sundayMornings }),
+    );
+    const during = availableSlots(
+      onDay("2026-03-29", { schedule: sundayMornings }),
+    );
     expect(times(before)).toEqual(times(during));
     // And the instants really did shift by an hour.
-    expect(during[0]!.start - before[0]!.start).toBe(6 * 24 * 60 * MINUTE + 23 * 60 * MINUTE);
+    expect(during[0]!.start - before[0]!.start).toBe(
+      6 * 24 * 60 * MINUTE + 23 * 60 * MINUTE,
+    );
   });
 
   it("loses the hour that does not exist, rather than the whole day", () => {
@@ -371,7 +446,10 @@ describe("late-night opening", () => {
       service: { durationMinutes: 60, stepMinutes: 60 },
       within: { start: saturday, end: saturday + 24 * 60 * MINUTE },
     });
-    expect(dayAndTimes(slots)).toEqual(["06/06/2026, 00:00", "06/06/2026, 01:00"]);
+    expect(dayAndTimes(slots)).toEqual([
+      "06/06/2026, 00:00",
+      "06/06/2026, 01:00",
+    ]);
   });
 });
 
@@ -387,7 +465,14 @@ describe("several resources", () => {
     const resources: Resource[] = [
       {
         id: "ana",
-        busy: [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }],
+        busy: [
+          {
+            interval: {
+              start: london("2026-06-01 10:00"),
+              end: london("2026-06-01 10:30"),
+            },
+          },
+        ],
       },
       { id: "ben" },
     ];
@@ -397,12 +482,21 @@ describe("several resources", () => {
   });
 
   it("drops a slot when nobody is free", () => {
-    const busy = [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }];
+    const busy = [
+      {
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 10:30"),
+        },
+      },
+    ];
     const resources: Resource[] = [
       { id: "ana", busy },
       { id: "ben", busy },
     ];
-    expect(times(availableSlots(onDay("2026-06-01", { resources })))).not.toContain("10:00");
+    expect(
+      times(availableSlots(onDay("2026-06-01", { resources }))),
+    ).not.toContain("10:00");
   });
 
   it("intersects a member of staff's own hours with the business's", () => {
@@ -416,19 +510,32 @@ describe("several resources", () => {
         endMinute: 18 * 60,
       })),
     };
-    const resources: Resource[] = [{ id: "ana", schedule: fromEleven }, { id: "ben" }];
+    const resources: Resource[] = [
+      { id: "ana", schedule: fromEleven },
+      { id: "ben" },
+    ];
     const slots = availableSlots(onDay("2026-06-01", { resources }));
-    expect(slots.find((s) => s.start === london("2026-06-01 09:00"))?.resourceIds).toEqual(["ben"]);
-    expect(slots.find((s) => s.start === london("2026-06-01 11:00"))?.resourceIds).toEqual([
-      "ana",
-      "ben",
-    ]);
+    expect(
+      slots.find((s) => s.start === london("2026-06-01 09:00"))?.resourceIds,
+    ).toEqual(["ben"]);
+    expect(
+      slots.find((s) => s.start === london("2026-06-01 11:00"))?.resourceIds,
+    ).toEqual(["ana", "ben"]);
   });
 
   it("applies shared busy time to everyone", () => {
     // A team meeting blocks the whole business, not one person.
-    const busy = [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 11:00") } }];
-    const slots = times(availableSlots(onDay("2026-06-01", { resources: two, busy })));
+    const busy = [
+      {
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 11:00"),
+        },
+      },
+    ];
+    const slots = times(
+      availableSlots(onDay("2026-06-01", { resources: two, busy })),
+    );
     expect(slots).toEqual(["09:00", "09:30", "11:00", "11:30"]);
   });
 
@@ -456,7 +563,10 @@ describe("overrides and closures", () => {
         },
       ],
     };
-    expect(times(availableSlots(onDay("2026-06-06", { schedule })))).toEqual(["10:00", "10:30"]);
+    expect(times(availableSlots(onDay("2026-06-06", { schedule })))).toEqual([
+      "10:00",
+      "10:30",
+    ]);
   });
 
   it("replaces the weekly hours rather than adding to them", () => {
@@ -469,13 +579,18 @@ describe("overrides and closures", () => {
         },
       ],
     };
-    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual(["14:00", "14:30"]);
+    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual([
+      "14:00",
+      "14:30",
+    ]);
   });
 
   it("cuts a closure out of the opening hours", () => {
     const schedule: Schedule = {
       ...weekdayMornings,
-      closures: [{ start: london("2026-06-01 10:00"), end: london("2026-06-01 11:00") }],
+      closures: [
+        { start: london("2026-06-01 10:00"), end: london("2026-06-01 11:00") },
+      ],
     };
     expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual([
       "09:00",
@@ -500,7 +615,10 @@ describe("overrides and closures", () => {
         },
       ],
     };
-    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual(["09:00", "09:30"]);
+    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual([
+      "09:00",
+      "09:30",
+    ]);
     expect(times(availableSlots(onDay("2026-07-06", { schedule })))).toEqual([
       "09:00",
       "09:30",
@@ -516,7 +634,11 @@ describe("alignment", () => {
       zone: LONDON,
       weekly: [{ weekday: 1, startMinute: 9 * 60 + 7, endMinute: 11 * 60 }],
     };
-    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual(["09:07", "09:37", "10:07"]);
+    expect(times(availableSlots(onDay("2026-06-01", { schedule })))).toEqual([
+      "09:07",
+      "09:37",
+      "10:07",
+    ]);
     expect(
       times(
         availableSlots(
@@ -532,16 +654,28 @@ describe("alignment", () => {
 
 describe("validation", () => {
   it("refuses a policy that cannot produce slots", () => {
-    expect(() => availableSlots(onDay("2026-06-01", { service: { durationMinutes: 0, stepMinutes: 30 } }))).toThrow(
-      AvailabilityError,
-    );
-    expect(() => availableSlots(onDay("2026-06-01", { service: { durationMinutes: 30, stepMinutes: 0 } }))).toThrow(
-      AvailabilityError,
-    );
     expect(() =>
       availableSlots(
         onDay("2026-06-01", {
-          service: { durationMinutes: 30, stepMinutes: 30, bufferBeforeMinutes: -5 },
+          service: { durationMinutes: 0, stepMinutes: 30 },
+        }),
+      ),
+    ).toThrow(AvailabilityError);
+    expect(() =>
+      availableSlots(
+        onDay("2026-06-01", {
+          service: { durationMinutes: 30, stepMinutes: 0 },
+        }),
+      ),
+    ).toThrow(AvailabilityError);
+    expect(() =>
+      availableSlots(
+        onDay("2026-06-01", {
+          service: {
+            durationMinutes: 30,
+            stepMinutes: 30,
+            bufferBeforeMinutes: -5,
+          },
         }),
       ),
     ).toThrow(AvailabilityError);
@@ -550,13 +684,20 @@ describe("validation", () => {
   it("refuses a backwards search window", () => {
     const start = startOfDay(parseDate("2026-06-01"), LONDON);
     expect(() =>
-      availableSlots({ ...onDay("2026-06-01"), within: { start, end: start - 1 } }),
+      availableSlots({
+        ...onDay("2026-06-01"),
+        within: { start, end: start - 1 },
+      }),
     ).toThrow(AvailabilityError);
   });
 
   it("refuses an unknown time zone", () => {
     expect(() =>
-      availableSlots(onDay("2026-06-01", { schedule: { ...weekdayMornings, zone: "Mars/Base" } })),
+      availableSlots(
+        onDay("2026-06-01", {
+          schedule: { ...weekdayMornings, zone: "Mars/Base" },
+        }),
+      ),
     ).toThrow(/unknown time zone/);
   });
 });
@@ -571,43 +712,80 @@ describe("isSlotBookable", () => {
   it("rejects a slot that is not on the grid", () => {
     // 10:15 is a real time inside opening hours, but not an offered start.
     // Accepting it would let a crafted request book outside the grid.
-    const result = isSlotBookable(onDay("2026-06-01"), { start: london("2026-06-01 10:15") });
-    expect(result).toEqual({ ok: false, reason: "that time is no longer available" });
+    const result = isSlotBookable(onDay("2026-06-01"), {
+      start: london("2026-06-01 10:15"),
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: "that time is no longer available",
+    });
   });
 
   it("rejects a slot that has just been taken", () => {
     // The stale-list case: the customer saw 10:00 twenty minutes ago.
-    const busy = [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }];
-    const result = isSlotBookable(onDay("2026-06-01", { resources: [{ ...anyone, busy }] }), {
-      start: london("2026-06-01 10:00"),
-    });
+    const busy = [
+      {
+        interval: {
+          start: london("2026-06-01 10:00"),
+          end: london("2026-06-01 10:30"),
+        },
+      },
+    ];
+    const result = isSlotBookable(
+      onDay("2026-06-01", { resources: [{ ...anyone, busy }] }),
+      {
+        start: london("2026-06-01 10:00"),
+      },
+    );
     expect(result.ok).toBe(false);
   });
 
   it("explains a notice violation in terms of the policy", () => {
     const query = onDay("2026-06-01", {
-      service: { durationMinutes: 30, stepMinutes: 30, minimumNoticeMinutes: 120 },
+      service: {
+        durationMinutes: 30,
+        stepMinutes: 30,
+        minimumNoticeMinutes: 120,
+      },
       now: london("2026-06-01 09:00"),
     });
     const result = isSlotBookable(query, { start: london("2026-06-01 09:30") });
-    expect(result).toEqual({ ok: false, reason: "bookings need at least 120 minutes' notice" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "bookings need at least 120 minutes' notice",
+    });
   });
 
   it("rejects a member of staff who is not free, even when the slot is", () => {
     const resources: Resource[] = [
       {
         id: "ana",
-        busy: [{ interval: { start: london("2026-06-01 10:00"), end: london("2026-06-01 10:30") } }],
+        busy: [
+          {
+            interval: {
+              start: london("2026-06-01 10:00"),
+              end: london("2026-06-01 10:30"),
+            },
+          },
+        ],
       },
       { id: "ben" },
     ];
     const query = onDay("2026-06-01", { resources });
-    expect(isSlotBookable(query, { start: london("2026-06-01 10:00"), resourceId: "ben" })).toEqual({
+    expect(
+      isSlotBookable(query, {
+        start: london("2026-06-01 10:00"),
+        resourceId: "ben",
+      }),
+    ).toEqual({
       ok: true,
       resourceIds: ["ben"],
     });
     expect(
-      isSlotBookable(query, { start: london("2026-06-01 10:00"), resourceId: "ana" }),
+      isSlotBookable(query, {
+        start: london("2026-06-01 10:00"),
+        resourceId: "ana",
+      }),
     ).toEqual({
       ok: false,
       reason: "that member of staff is no longer available at that time",
@@ -615,7 +793,9 @@ describe("isSlotBookable", () => {
   });
 
   it("reports a bad schedule as a reason rather than throwing", () => {
-    const query = onDay("2026-06-01", { schedule: { ...weekdayMornings, zone: "Mars/Base" } });
+    const query = onDay("2026-06-01", {
+      schedule: { ...weekdayMornings, zone: "Mars/Base" },
+    });
     const result = isSlotBookable(query, { start: london("2026-06-01 10:00") });
     expect(result.ok).toBe(false);
   });
@@ -625,9 +805,19 @@ describe("groupByLocalDate", () => {
   it("groups by the viewer's own dates, not the business's", () => {
     // A 22:00 London slot is already tomorrow in Auckland. Showing it on
     // today's row of an Auckland customer's calendar is wrong.
-    const slots = [{ start: london("2026-06-05 22:00"), end: london("2026-06-05 23:00"), resourceIds: ["a"] }];
-    expect(groupByLocalDate(slots, LONDON).map((g) => g.date)).toEqual(["2026-06-05"]);
-    expect(groupByLocalDate(slots, "Pacific/Auckland").map((g) => g.date)).toEqual(["2026-06-06"]);
+    const slots = [
+      {
+        start: london("2026-06-05 22:00"),
+        end: london("2026-06-05 23:00"),
+        resourceIds: ["a"],
+      },
+    ];
+    expect(groupByLocalDate(slots, LONDON).map((g) => g.date)).toEqual([
+      "2026-06-05",
+    ]);
+    expect(
+      groupByLocalDate(slots, "Pacific/Auckland").map((g) => g.date),
+    ).toEqual(["2026-06-06"]);
   });
 
   it("keeps the slots of a day together and in order", () => {

@@ -1,7 +1,13 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { Database, Executor } from "@/db/client";
-import { invitations, memberships, organizations, type Invitation, type Role } from "@/db/schema";
+import {
+  invitations,
+  memberships,
+  organizations,
+  type Invitation,
+  type Role,
+} from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import { randomToken, sha256 } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
@@ -42,7 +48,11 @@ export async function createInvitation(
 
   const entitlements = await getEntitlements(tx);
   const seats = await countSeats(tx);
-  assertWithinLimit(entitlements.maxSeats, seats.members + seats.pending, "seat");
+  assertWithinLimit(
+    entitlements.maxSeats,
+    seats.members + seats.pending,
+    "seat",
+  );
 
   const now = deps.now?.() ?? new Date();
   const token = randomToken(32);
@@ -58,7 +68,8 @@ export async function createInvitation(
     })
     .onConflictDoNothing()
     .returning();
-  if (!invitation) throw new AppError("conflict", `${email} already has a pending invitation`);
+  if (!invitation)
+    throw new AppError("conflict", `${email} already has a pending invitation`);
 
   await recordAudit(tx, {
     orgId: input.orgId,
@@ -78,7 +89,10 @@ export async function createInvitation(
   return { invitation, token };
 }
 
-export async function listPendingInvitations(tx: Executor, actor: Actor): Promise<Invitation[]> {
+export async function listPendingInvitations(
+  tx: Executor,
+  actor: Actor,
+): Promise<Invitation[]> {
   assertCan(actor, "members:read");
   return tx
     .select()
@@ -111,7 +125,8 @@ export async function revokeInvitation(
       ),
     )
     .returning({ id: invitations.id, email: invitations.email });
-  if (revoked.length === 0) throw new AppError("not_found", "invitation not found");
+  if (revoked.length === 0)
+    throw new AppError("not_found", "invitation not found");
   await recordAudit(tx, {
     orgId: input.orgId,
     actor,
@@ -142,40 +157,49 @@ export async function acceptInvitation(
   if (inv.expiresAt.getTime() <= Date.now())
     throw new AppError("invalid", "invitation has expired");
   if (!input.email || input.email.toLowerCase() !== inv.email) {
-    throw new AppError("forbidden", "invitation was sent to a different email address");
+    throw new AppError(
+      "forbidden",
+      "invitation was sent to a different email address",
+    );
   }
 
-  return withTenant(db, { orgId: inv.orgId, userId: input.userId }, async (tx) => {
-    const claimed = await tx
-      .update(invitations)
-      .set({ acceptedAt: new Date() })
-      .where(
-        and(
-          eq(invitations.id, inv.id),
-          isNull(invitations.acceptedAt),
-          isNull(invitations.revokedAt),
-        ),
-      )
-      .returning({ id: invitations.id });
-    if (claimed.length === 0) throw new AppError("conflict", "invitation was already used");
+  return withTenant(
+    db,
+    { orgId: inv.orgId, userId: input.userId },
+    async (tx) => {
+      const claimed = await tx
+        .update(invitations)
+        .set({ acceptedAt: new Date() })
+        .where(
+          and(
+            eq(invitations.id, inv.id),
+            isNull(invitations.acceptedAt),
+            isNull(invitations.revokedAt),
+          ),
+        )
+        .returning({ id: invitations.id });
+      if (claimed.length === 0)
+        throw new AppError("conflict", "invitation was already used");
 
-    await tx
-      .insert(memberships)
-      .values({ orgId: inv.orgId, userId: input.userId, role: inv.role })
-      .onConflictDoNothing();
-    await recordAudit(tx, {
-      orgId: inv.orgId,
-      actor: { kind: "user", userId: input.userId, role: inv.role },
-      action: "invitation.accepted",
-      target: { type: "invitation", id: inv.id },
-      metadata: { email: inv.email, role: inv.role },
-      request,
-    });
-    const [org] = await tx
-      .select({ slug: organizations.slug })
-      .from(organizations)
-      .where(eq(organizations.id, inv.orgId));
-    if (!org) throw new AppError("not_found", "organization no longer exists");
-    return { orgId: inv.orgId, slug: org.slug, role: inv.role };
-  });
+      await tx
+        .insert(memberships)
+        .values({ orgId: inv.orgId, userId: input.userId, role: inv.role })
+        .onConflictDoNothing();
+      await recordAudit(tx, {
+        orgId: inv.orgId,
+        actor: { kind: "user", userId: input.userId, role: inv.role },
+        action: "invitation.accepted",
+        target: { type: "invitation", id: inv.id },
+        metadata: { email: inv.email, role: inv.role },
+        request,
+      });
+      const [org] = await tx
+        .select({ slug: organizations.slug })
+        .from(organizations)
+        .where(eq(organizations.id, inv.orgId));
+      if (!org)
+        throw new AppError("not_found", "organization no longer exists");
+      return { orgId: inv.orgId, slug: org.slug, role: inv.role };
+    },
+  );
 }

@@ -20,7 +20,11 @@ export class StripeBillingProvider implements BillingProvider {
     email?: string | null;
   }): Promise<string> {
     const customer = await this.stripe.customers.create(
-      { name: input.name, email: input.email ?? undefined, metadata: { org_id: input.orgId } },
+      {
+        name: input.name,
+        email: input.email ?? undefined,
+        metadata: { org_id: input.orgId },
+      },
       { idempotencyKey: `customer:${input.orgId}` },
     );
     return customer.id;
@@ -38,7 +42,9 @@ export class StripeBillingProvider implements BillingProvider {
       mode: "subscription",
       customer: input.customerId,
       client_reference_id: input.orgId,
-      line_items: [{ price: input.priceId, quantity: Math.max(1, input.seats) }],
+      line_items: [
+        { price: input.priceId, quantity: Math.max(1, input.seats) },
+      ],
       subscription_data: { metadata: { org_id: input.orgId } },
       allow_promotion_codes: true,
       success_url: input.successUrl,
@@ -48,7 +54,10 @@ export class StripeBillingProvider implements BillingProvider {
     return session.url;
   }
 
-  async createPortalSession(input: { customerId: string; returnUrl: string }): Promise<string> {
+  async createPortalSession(input: {
+    customerId: string;
+    returnUrl: string;
+  }): Promise<string> {
     const session = await this.stripe.billingPortal.sessions.create({
       customer: input.customerId,
       return_url: input.returnUrl,
@@ -60,7 +69,10 @@ export class StripeBillingProvider implements BillingProvider {
     return this.stripe.subscriptions.retrieve(id);
   }
 
-  async updateSeatQuantity(subscriptionId: string, quantity: number): Promise<void> {
+  async updateSeatQuantity(
+    subscriptionId: string,
+    quantity: number,
+  ): Promise<void> {
     const sub = await this.stripe.subscriptions.retrieve(subscriptionId);
     const item = sub.items.data[0];
     if (!item || item.quantity === quantity) return;
@@ -71,6 +83,10 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   constructEvent(payload: string, signature: string): Stripe.Event {
-    return this.stripe.webhooks.constructEvent(payload, signature, this.webhookSecret);
+    return this.stripe.webhooks.constructEvent(
+      payload,
+      signature,
+      this.webhookSecret,
+    );
   }
 }

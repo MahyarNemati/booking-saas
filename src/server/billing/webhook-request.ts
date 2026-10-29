@@ -18,7 +18,8 @@ export async function handleWebhookRequest(
   },
 ): Promise<Response> {
   const signature = req.headers.get("stripe-signature");
-  if (!signature) return Response.json({ error: "missing signature" }, { status: 400 });
+  if (!signature)
+    return Response.json({ error: "missing signature" }, { status: 400 });
 
   const payload = await req.text();
   if (Buffer.byteLength(payload) > MAX_BODY_BYTES) {

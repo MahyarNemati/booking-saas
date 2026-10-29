@@ -8,7 +8,12 @@ import { AppError } from "@/lib/errors";
 import { recordAudit, type RequestMeta } from "./audit";
 import { assertFeature } from "./billing/plans";
 import { getEntitlements } from "./billing/service";
-import { API_KEY_SCOPES, assertCan, type Actor, type ApiKeyScope } from "./rbac";
+import {
+  API_KEY_SCOPES,
+  assertCan,
+  type Actor,
+  type ApiKeyScope,
+} from "./rbac";
 
 const KEY_PREFIX = "sk";
 const KEY_PATTERN = /^sk_([0-9a-f]{12})_([A-Za-z0-9_-]{43})$/;
@@ -47,7 +52,12 @@ export function parseKey(key: string): { prefix: string } | null {
 export async function createApiKey(
   tx: Executor,
   actor: Actor,
-  input: { orgId: string; name: string; scopes: ApiKeyScope[]; expiresInDays?: number | null },
+  input: {
+    orgId: string;
+    name: string;
+    scopes: ApiKeyScope[];
+    expiresInDays?: number | null;
+  },
   request?: RequestMeta,
 ): Promise<{ key: string; record: PublicApiKey }> {
   assertCan(actor, "api_keys:manage");
@@ -74,13 +84,20 @@ export async function createApiKey(
     actor,
     action: "api_key.created",
     target: { type: "api_key", id: record.id },
-    metadata: { name: parsed.name, scopes: parsed.scopes, prefix: generated.prefix },
+    metadata: {
+      name: parsed.name,
+      scopes: parsed.scopes,
+      prefix: generated.prefix,
+    },
     request,
   });
   return { key: generated.key, record: toPublic(record) };
 }
 
-export async function listApiKeys(tx: Executor, actor: Actor): Promise<PublicApiKey[]> {
+export async function listApiKeys(
+  tx: Executor,
+  actor: Actor,
+): Promise<PublicApiKey[]> {
   assertCan(actor, "api_keys:read");
   const rows = await tx.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
   return rows.map(toPublic);
@@ -98,7 +115,8 @@ export async function revokeApiKey(
     .set({ revokedAt: new Date() })
     .where(and(eq(apiKeys.id, input.keyId), isNull(apiKeys.revokedAt)))
     .returning({ id: apiKeys.id, prefix: apiKeys.prefix });
-  if (revoked.length === 0) throw new AppError("not_found", "api key not found");
+  if (revoked.length === 0)
+    throw new AppError("not_found", "api key not found");
   await recordAudit(tx, {
     orgId: input.orgId,
     actor,
@@ -119,15 +137,23 @@ export interface ResolvedKey {
  * any org is known, so it reads api_keys by its unique prefix on the
  * privileged connection and returns the org for the caller to scope into.
  */
-export async function authenticateApiKey(db: Database, key: string): Promise<ResolvedKey> {
+export async function authenticateApiKey(
+  db: Database,
+  key: string,
+): Promise<ResolvedKey> {
   const parsed = parseKey(key);
   if (!parsed) throw new AppError("unauthenticated", "malformed api key");
-  const [row] = await db.select().from(apiKeys).where(eq(apiKeys.prefix, parsed.prefix)).limit(1);
+  const [row] = await db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.prefix, parsed.prefix))
+    .limit(1);
   if (!row || !safeEqualHex(row.keyHash, sha256(key))) {
     throw new AppError("unauthenticated", "invalid api key");
   }
   const now = Date.now();
-  if (row.revokedAt) throw new AppError("unauthenticated", "api key has been revoked");
+  if (row.revokedAt)
+    throw new AppError("unauthenticated", "api key has been revoked");
   if (row.expiresAt && row.expiresAt.getTime() <= now) {
     throw new AppError("unauthenticated", "api key has expired");
   }
@@ -137,11 +163,18 @@ export async function authenticateApiKey(db: Database, key: string): Promise<Res
     .update(apiKeys)
     .set({ lastUsedAt: new Date(now) })
     .where(
-      and(eq(apiKeys.id, row.id), or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, stale))),
+      and(
+        eq(apiKeys.id, row.id),
+        or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, stale)),
+      ),
     );
 
   return {
     orgId: row.orgId,
-    actor: { kind: "api_key", keyId: row.id, scopes: row.scopes as ApiKeyScope[] },
+    actor: {
+      kind: "api_key",
+      keyId: row.id,
+      scopes: row.scopes as ApiKeyScope[],
+    },
   };
 }

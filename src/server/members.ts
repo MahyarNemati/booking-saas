@@ -19,7 +19,10 @@ export interface MemberRow {
 }
 
 /** All functions here expect to run inside withTenant(). */
-export async function listMembers(tx: Executor, actor: Actor): Promise<MemberRow[]> {
+export async function listMembers(
+  tx: Executor,
+  actor: Actor,
+): Promise<MemberRow[]> {
   assertCan(actor, "members:read");
   return tx
     .select({
@@ -55,7 +58,8 @@ async function ownerCount(tx: Executor): Promise<number> {
 }
 
 function actorRole(actor: Actor): Role {
-  if (actor.kind !== "user") throw new AppError("forbidden", "only users can manage members");
+  if (actor.kind !== "user")
+    throw new AppError("forbidden", "only users can manage members");
   return actor.role;
 }
 
@@ -70,12 +74,21 @@ export async function changeMemberRole(
   const target = await loadMembership(tx, input.membershipId);
   if (target.role === role) return;
   if (!canChangeRole(actorRole(actor), target.role, role)) {
-    throw new AppError("forbidden", `cannot change a ${target.role} to ${role}`);
+    throw new AppError(
+      "forbidden",
+      `cannot change a ${target.role} to ${role}`,
+    );
   }
   if (target.role === "owner" && (await ownerCount(tx)) <= 1) {
-    throw new AppError("conflict", "an organization must keep at least one owner");
+    throw new AppError(
+      "conflict",
+      "an organization must keep at least one owner",
+    );
   }
-  await tx.update(memberships).set({ role }).where(eq(memberships.id, target.id));
+  await tx
+    .update(memberships)
+    .set({ role })
+    .where(eq(memberships.id, target.id));
   await recordAudit(tx, {
     orgId: input.orgId,
     actor,
@@ -101,11 +114,16 @@ export async function removeMember(
     }
   }
   if (target.role === "owner" && (await ownerCount(tx)) <= 1) {
-    throw new AppError("conflict", "transfer ownership before the last owner leaves");
+    throw new AppError(
+      "conflict",
+      "transfer ownership before the last owner leaves",
+    );
   }
   await tx
     .delete(memberships)
-    .where(and(eq(memberships.id, target.id), eq(memberships.orgId, input.orgId)));
+    .where(
+      and(eq(memberships.id, target.id), eq(memberships.orgId, input.orgId)),
+    );
   await recordAudit(tx, {
     orgId: input.orgId,
     actor,

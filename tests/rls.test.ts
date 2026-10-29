@@ -1,6 +1,13 @@
 import { eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
-import { apiKeys, auditLogs, memberships, organizations, projects, users } from "@/db/schema";
+import {
+  apiKeys,
+  auditLogs,
+  memberships,
+  organizations,
+  services,
+  users,
+} from "@/db/schema";
 import { withTenant, withUser } from "@/db/tenant";
 import { createOrganization } from "@/server/orgs";
 import { createUser, hasDatabase, pgError, testDb } from "./db";
@@ -11,32 +18,51 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
   let bob: { id: string; email: string };
   let orgA: string;
   let orgB: string;
-  let projectB: string;
+  let serviceB: string;
 
   beforeAll(async () => {
     alice = await createUser(db, "alice");
     bob = await createUser(db, "bob");
-    orgA = (await createOrganization(db, { userId: alice.id, name: "Acme" })).id;
-    orgB = (await createOrganization(db, { userId: bob.id, name: "Globex" })).id;
+    orgA = (await createOrganization(db, { userId: alice.id, name: "Acme" }))
+      .id;
+    orgB = (await createOrganization(db, { userId: bob.id, name: "Globex" }))
+      .id;
     await withTenant(db, { orgId: orgA }, (tx) =>
-      tx.insert(projects).values({ orgId: orgA, name: "alpha" }),
+      tx.insert(services).values({
+        orgId: orgA,
+        name: "alpha",
+        slug: "alpha",
+        durationMinutes: 30,
+      }),
     );
     const [p] = await withTenant(db, { orgId: orgB }, (tx) =>
-      tx.insert(projects).values({ orgId: orgB, name: "beta" }).returning(),
+      tx
+        .insert(services)
+        .values({
+          orgId: orgB,
+          name: "beta",
+          slug: "beta",
+          durationMinutes: 30,
+        })
+        .returning(),
     );
-    projectB = p!.id;
+    serviceB = p!.id;
   });
 
   it("filters reads to the current org even without a where clause", async () => {
-    const rows = await withTenant(db, { orgId: orgA }, (tx) => tx.select().from(projects));
+    const rows = await withTenant(db, { orgId: orgA }, (tx) =>
+      tx.select().from(services),
+    );
     expect(rows.map((r) => r.name)).toEqual(["alpha"]);
-    const orgs = await withTenant(db, { orgId: orgA }, (tx) => tx.select().from(organizations));
+    const orgs = await withTenant(db, { orgId: orgA }, (tx) =>
+      tx.select().from(organizations),
+    );
     expect(orgs.map((o) => o.id)).toEqual([orgA]);
   });
 
   it("returns nothing when querying another org's rows by id", async () => {
     const rows = await withTenant(db, { orgId: orgA }, (tx) =>
-      tx.select().from(projects).where(eq(projects.id, projectB)),
+      tx.select().from(services).where(eq(services.id, serviceB)),
     );
     expect(rows).toHaveLength(0);
   });
@@ -46,7 +72,12 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
       (
         await pgError(
           withTenant(db, { orgId: orgA }, (tx) =>
-            tx.insert(projects).values({ orgId: orgB, name: "smuggled" }),
+            tx.insert(services).values({
+              orgId: orgB,
+              name: "smuggled",
+              slug: "smuggled",
+              durationMinutes: 30,
+            }),
           ),
         )
       ).message,
@@ -55,14 +86,21 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
 
   it("cannot update or delete another org's rows", async () => {
     const updated = await withTenant(db, { orgId: orgA }, (tx) =>
-      tx.update(projects).set({ name: "pwned" }).where(eq(projects.id, projectB)).returning(),
+      tx
+        .update(services)
+        .set({ name: "pwned" })
+        .where(eq(services.id, serviceB))
+        .returning(),
     );
     expect(updated).toHaveLength(0);
     const deleted = await withTenant(db, { orgId: orgA }, (tx) =>
-      tx.delete(projects).where(eq(projects.id, projectB)).returning(),
+      tx.delete(services).where(eq(services.id, serviceB)).returning(),
     );
     expect(deleted).toHaveLength(0);
-    const [still] = await db.select().from(projects).where(eq(projects.id, projectB));
+    const [still] = await db
+      .select()
+      .from(services)
+      .where(eq(services.id, serviceB));
     expect(still?.name).toBe("beta");
   });
 
@@ -70,7 +108,9 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
     expect(
       (
         await pgError(
-          withTenant(db, { orgId: orgA }, (tx) => tx.update(projects).set({ orgId: orgB })),
+          withTenant(db, { orgId: orgA }, (tx) =>
+            tx.update(services).set({ orgId: orgB }),
+          ),
         )
       ).message,
     ).toMatch(/row-level security/);
@@ -79,7 +119,7 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
   it("sees nothing when no org is selected", async () => {
     const rows = await db.transaction(async (tx) => {
       await tx.execute(sql`set local role app_tenant`);
-      return tx.select().from(projects);
+      return tx.select().from(services);
     });
     expect(rows).toHaveLength(0);
   });
@@ -88,12 +128,18 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
     expect(
       (
         await pgError(
-          withTenant(db, { orgId: orgA }, (tx) => tx.update(auditLogs).set({ action: "tampered" })),
+          withTenant(db, { orgId: orgA }, (tx) =>
+            tx.update(auditLogs).set({ action: "tampered" }),
+          ),
         )
       ).message,
     ).toMatch(/permission denied/);
     expect(
-      (await pgError(withTenant(db, { orgId: orgA }, (tx) => tx.delete(auditLogs)))).message,
+      (
+        await pgError(
+          withTenant(db, { orgId: orgA }, (tx) => tx.delete(auditLogs)),
+        )
+      ).message,
     ).toMatch(/permission denied/);
   });
 
@@ -103,23 +149,31 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
       name: "ci",
       prefix: `${Date.now().toString(16).slice(-12).padStart(12, "0")}`,
       keyHash: "00",
-      scopes: ["projects:read"],
+      scopes: ["bookings:read"],
     });
-    const keys = await withTenant(db, { orgId: orgA }, (tx) => tx.select().from(apiKeys));
+    const keys = await withTenant(db, { orgId: orgA }, (tx) =>
+      tx.select().from(apiKeys),
+    );
     expect(keys).toHaveLength(0);
-    const members = await withTenant(db, { orgId: orgA }, (tx) => tx.select().from(memberships));
+    const members = await withTenant(db, { orgId: orgA }, (tx) =>
+      tx.select().from(memberships),
+    );
     expect(members.map((m) => m.userId)).toEqual([alice.id]);
   });
 
   it("only exposes users who share the current org", async () => {
-    const visible = await withTenant(db, { orgId: orgA, userId: alice.id }, (tx) =>
-      tx.select().from(users),
+    const visible = await withTenant(
+      db,
+      { orgId: orgA, userId: alice.id },
+      (tx) => tx.select().from(users),
     );
     expect(visible.map((u) => u.id)).toEqual([alice.id]);
   });
 
   it("lists only the user's own memberships when no org is selected", async () => {
-    const orgs = await withUser(db, alice.id, (tx) => tx.select().from(organizations));
+    const orgs = await withUser(db, alice.id, (tx) =>
+      tx.select().from(organizations),
+    );
     expect(orgs.map((o) => o.id)).toEqual([orgA]);
   });
 
@@ -133,6 +187,8 @@ describe.skipIf(!hasDatabase)("row-level security", () => {
   });
 
   it("rejects malformed org ids before touching the database", async () => {
-    await expect(withTenant(db, { orgId: "' or 1=1 --" }, async () => undefined)).rejects.toThrow();
+    await expect(
+      withTenant(db, { orgId: "' or 1=1 --" }, async () => undefined),
+    ).rejects.toThrow();
   });
 });

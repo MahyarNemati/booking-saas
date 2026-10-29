@@ -14,7 +14,9 @@ const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) {
-    process.stderr.write("DATABASE_URL or MIGRATION_DATABASE_URL is required\n");
+    process.stderr.write(
+      "DATABASE_URL or MIGRATION_DATABASE_URL is required\n",
+    );
     process.exit(1);
   }
   runMigrations(url)

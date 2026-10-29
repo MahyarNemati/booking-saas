@@ -1,7 +1,12 @@
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Database, Executor } from "@/db/client";
-import { memberships, organizations, type Organization, type Role } from "@/db/schema";
+import {
+  memberships,
+  organizations,
+  type Organization,
+  type Role,
+} from "@/db/schema";
 import { withUser } from "@/db/tenant";
 import { randomToken } from "@/lib/crypto";
 import { AppError } from "@/lib/errors";
@@ -53,9 +58,14 @@ export async function createOrganization(
             .replace(/[^a-z0-9]/g, "")}`;
     try {
       return await db.transaction(async (tx) => {
-        const [org] = await tx.insert(organizations).values({ name, slug }).returning();
+        const [org] = await tx
+          .insert(organizations)
+          .values({ name, slug })
+          .returning();
         if (!org) throw new Error("insert returned no row");
-        await tx.insert(memberships).values({ orgId: org.id, userId: input.userId, role: "owner" });
+        await tx
+          .insert(memberships)
+          .values({ orgId: org.id, userId: input.userId, role: "owner" });
         await recordAudit(tx, {
           orgId: org.id,
           actor: { kind: "user", userId: input.userId, role: "owner" },
@@ -79,7 +89,10 @@ export interface OrgMembership {
 }
 
 /** Organizations the user belongs to, resolved under RLS with no org selected. */
-export function listUserOrganizations(db: Database, userId: string): Promise<OrgMembership[]> {
+export function listUserOrganizations(
+  db: Database,
+  userId: string,
+): Promise<OrgMembership[]> {
   return withUser(db, userId, (tx) =>
     tx
       .select({ org: organizations, role: memberships.role })
@@ -120,7 +133,8 @@ export async function renameOrganization(
     .set({ name: parsed })
     .where(eq(organizations.id, orgId))
     .returning({ id: organizations.id });
-  if (updated.length === 0) throw new AppError("not_found", "organization not found");
+  if (updated.length === 0)
+    throw new AppError("not_found", "organization not found");
   await recordAudit(tx, {
     orgId,
     actor,

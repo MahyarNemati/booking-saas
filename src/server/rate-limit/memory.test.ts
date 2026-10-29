@@ -7,7 +7,8 @@ describe("MemoryRateLimiter", () => {
   it("allows a burst up to capacity, then refuses with a retry hint", async () => {
     const now = 0;
     const rl = new MemoryRateLimiter(() => now);
-    for (let i = 0; i < 3; i += 1) expect((await rl.consume("k", policy)).allowed).toBe(true);
+    for (let i = 0; i < 3; i += 1)
+      expect((await rl.consume("k", policy)).allowed).toBe(true);
     const refused = await rl.consume("k", policy);
     expect(refused).toMatchObject({ allowed: false, remaining: 0, limit: 3 });
     expect(refused.retryAfterMs).toBe(1000);

@@ -103,7 +103,14 @@ export function partsOf(instant: number, zone: string): WallClock {
 /** The zone's offset from UTC at `instant`, in milliseconds. */
 export function offsetAt(instant: number, zone: string): number {
   const p = partsOf(instant, zone);
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const asUtc = Date.UTC(
+    p.year,
+    p.month - 1,
+    p.day,
+    p.hour,
+    p.minute,
+    p.second,
+  );
   // The remainder keeps sub-second precision, which formatToParts drops.
   return asUtc - (instant - (instant % 1000));
 }
@@ -123,7 +130,11 @@ export function offsetAt(instant: number, zone: string): number {
 export type Resolution =
   | { readonly kind: "exact"; readonly instant: number }
   | { readonly kind: "gap"; readonly before: number; readonly after: number }
-  | { readonly kind: "ambiguous"; readonly first: number; readonly second: number };
+  | {
+      readonly kind: "ambiguous";
+      readonly first: number;
+      readonly second: number;
+    };
 
 /**
  * What to do with a wall-clock time that is not exact.
@@ -149,7 +160,14 @@ export type GapPolicy = "earlier" | "later" | "shift" | "reject";
  * transition.
  */
 export function resolve(wall: WallClock, zone: string): Resolution {
-  const naive = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second);
+  const naive = Date.UTC(
+    wall.year,
+    wall.month - 1,
+    wall.day,
+    wall.hour,
+    wall.minute,
+    wall.second,
+  );
 
   // Two candidate offsets: the one in force just before the naive instant and
   // the one just after. At a transition they differ, and that is the signal.
@@ -166,7 +184,8 @@ export function resolve(wall: WallClock, zone: string): Resolution {
 
   const found = [...candidates].sort((a, b) => a - b);
   if (found.length === 1) return { kind: "exact", instant: found[0]! };
-  if (found.length >= 2) return { kind: "ambiguous", first: found[0]!, second: found[1]! };
+  if (found.length >= 2)
+    return { kind: "ambiguous", first: found[0]!, second: found[1]! };
 
   // No candidate: the clocks jumped over this time. Report the instants on
   // either side of the jump so a caller can shift or reject.
@@ -190,7 +209,11 @@ function sameWallClock(a: WallClock, b: WallClock): boolean {
  * The instant for a wall-clock time, with an explicit policy for the days when
  * that question has no single answer.
  */
-export function instantOf(wall: WallClock, zone: string, policy: GapPolicy = "shift"): number {
+export function instantOf(
+  wall: WallClock,
+  zone: string,
+  policy: GapPolicy = "shift",
+): number {
   const r = resolve(wall, zone);
   switch (r.kind) {
     case "exact":
@@ -230,7 +253,9 @@ export function atMinuteOfDay(
   policy: GapPolicy = "shift",
 ): number {
   if (!Number.isInteger(minutes) || minutes < 0) {
-    throw new TimeZoneError(`minute of day must be a non-negative integer, got ${minutes}`);
+    throw new TimeZoneError(
+      `minute of day must be a non-negative integer, got ${minutes}`,
+    );
   }
   // Minutes past midnight rather than a clock time, so values at or beyond
   // 24:00 mean "into the next day" — which is how a business open until 02:00
@@ -276,7 +301,11 @@ export function weekdayOfDate(date: PlainDate): number {
 export function addDays(date: PlainDate, days: number): PlainDate {
   const d = new Date(Date.UTC(date.year, date.month - 1, date.day));
   d.setUTCDate(d.getUTCDate() + days);
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
 }
 
 export function compareDates(a: PlainDate, b: PlainDate): number {
@@ -295,7 +324,9 @@ export function datesBetween(from: PlainDate, to: PlainDate): PlainDate[] {
     if (compareDates(cursor, to) >= 0) return out;
     cursor = addDays(cursor, 1);
   }
-  throw new TimeZoneError("date range is longer than ten years; narrow the query");
+  throw new TimeZoneError(
+    "date range is longer than ten years; narrow the query",
+  );
 }
 
 /** `YYYY-MM-DD`. */
@@ -306,7 +337,10 @@ export function formatDate(date: PlainDate): string {
 
 export function parseDate(text: string): PlainDate {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  if (!m) throw new TimeZoneError(`expected a YYYY-MM-DD date, got ${JSON.stringify(text)}`);
+  if (!m)
+    throw new TimeZoneError(
+      `expected a YYYY-MM-DD date, got ${JSON.stringify(text)}`,
+    );
   const date = { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
   // Reject 2026-02-30 rather than rolling it into March, which is what the
   // Date constructor would do silently.
@@ -337,7 +371,10 @@ export function formatMinuteOfDay(minutes: MinuteOfDay): string {
 
 export function parseMinuteOfDay(text: string): MinuteOfDay {
   const m = /^(\d{1,2}):(\d{2})$/.exec(text);
-  if (!m) throw new TimeZoneError(`expected an HH:MM time, got ${JSON.stringify(text)}`);
+  if (!m)
+    throw new TimeZoneError(
+      `expected an HH:MM time, got ${JSON.stringify(text)}`,
+    );
   const hour = Number(m[1]);
   const minute = Number(m[2]);
   // 24:00 is allowed as an end time, and means midnight at the end of the day.

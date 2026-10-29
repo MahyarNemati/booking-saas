@@ -93,7 +93,9 @@ export function validateWindow(w: Window): void {
     ["endMinute", w.endMinute],
   ] as const) {
     if (!Number.isInteger(value) || value < 0) {
-      throw new ScheduleError(`${name} must be a non-negative integer, got ${value}`);
+      throw new ScheduleError(
+        `${name} must be a non-negative integer, got ${value}`,
+      );
     }
   }
   if (w.startMinute >= MINUTES_IN_DAY) {
@@ -118,10 +120,16 @@ export function validateWindow(w: Window): void {
 
 export function validateSchedule(schedule: Schedule): void {
   if (!isValidZone(schedule.zone)) {
-    throw new ScheduleError(`unknown time zone ${JSON.stringify(schedule.zone)}`);
+    throw new ScheduleError(
+      `unknown time zone ${JSON.stringify(schedule.zone)}`,
+    );
   }
   for (const rule of schedule.weekly) {
-    if (!Number.isInteger(rule.weekday) || rule.weekday < 0 || rule.weekday > 6) {
+    if (
+      !Number.isInteger(rule.weekday) ||
+      rule.weekday < 0 ||
+      rule.weekday > 6
+    ) {
       throw new ScheduleError(`weekday must be 0–6, got ${rule.weekday}`);
     }
     validateWindow(rule);
@@ -149,12 +157,16 @@ function ruleApplies(rule: WeeklyRule, date: PlainDate): boolean {
  * matching weekly rules otherwise.
  */
 export function windowsOn(schedule: Schedule, date: PlainDate): Window[] {
-  const override = (schedule.overrides ?? []).find((o) => compareDates(o.date, date) === 0);
+  const override = (schedule.overrides ?? []).find(
+    (o) => compareDates(o.date, date) === 0,
+  );
   if (override) return [...override.windows];
-  return schedule.weekly.filter((r) => ruleApplies(r, date)).map((r) => ({
-    startMinute: r.startMinute,
-    endMinute: r.endMinute,
-  }));
+  return schedule.weekly
+    .filter((r) => ruleApplies(r, date))
+    .map((r) => ({
+      startMinute: r.startMinute,
+      endMinute: r.endMinute,
+    }));
 }
 
 /**
@@ -165,7 +177,10 @@ export function windowsOn(schedule: Schedule, date: PlainDate): Window[] {
  * past midnight belongs to the previous local day, so asking for a single day
  * must still pick up the tail of the night before.
  */
-export function expandSchedule(schedule: Schedule, range: DateRange): Interval[] {
+export function expandSchedule(
+  schedule: Schedule,
+  range: DateRange,
+): Interval[] {
   validateSchedule(schedule);
   if (compareDates(range.from, range.to) > 0) return [];
 
@@ -193,7 +208,10 @@ export function expandSchedule(schedule: Schedule, range: DateRange): Interval[]
  * Expands a schedule and clips it to an instant range, which is what a
  * calendar query actually wants: "the hours between these two instants".
  */
-export function expandScheduleBetween(schedule: Schedule, bounds: Interval): Interval[] {
+export function expandScheduleBetween(
+  schedule: Schedule,
+  bounds: Interval,
+): Interval[] {
   validateSchedule(schedule);
   const { fromDate, toDate } = boundsToDates(schedule.zone, bounds);
   const expanded = expandSchedule(schedule, { from: fromDate, to: toDate });
@@ -207,7 +225,10 @@ export function expandScheduleBetween(schedule: Schedule, bounds: Interval): Int
   return clipped;
 }
 
-function boundsToDates(zone: string, bounds: Interval): { fromDate: PlainDate; toDate: PlainDate } {
+function boundsToDates(
+  zone: string,
+  bounds: Interval,
+): { fromDate: PlainDate; toDate: PlainDate } {
   if (bounds.end < bounds.start) {
     throw new ScheduleError("bounds end before they start");
   }
@@ -220,7 +241,10 @@ function boundsToDates(zone: string, bounds: Interval): { fromDate: PlainDate; t
 }
 
 /** Merges several schedules, for a business with more than one source of hours. */
-export function mergeSchedules(schedules: readonly Schedule[], range: DateRange): Interval[] {
+export function mergeSchedules(
+  schedules: readonly Schedule[],
+  range: DateRange,
+): Interval[] {
   return schedules.reduce<Interval[]>(
     (acc, schedule) => union(acc, expandSchedule(schedule, range)),
     [],
@@ -244,9 +268,12 @@ export function describeSchedule(schedule: Schedule): string {
       o.windows.length === 0
         ? `${formatDate(o.date)} closed`
         : `${formatDate(o.date)} ` +
-          o.windows
-            .map((w) => `${formatMinuteOfDay(w.startMinute)}–${formatMinuteOfDay(w.endMinute)}`)
-            .join(", "),
+            o.windows
+              .map(
+                (w) =>
+                  `${formatMinuteOfDay(w.startMinute)}–${formatMinuteOfDay(w.endMinute)}`,
+              )
+              .join(", "),
     );
   }
   return parts.join("; ");

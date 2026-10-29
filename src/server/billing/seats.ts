@@ -7,7 +7,9 @@ import { invitations, memberships } from "@/db/schema";
  * pending invites stops an org on a capped plan from inviting past its limit.
  * Must run inside withTenant(); RLS supplies the org filter.
  */
-export async function countSeats(tx: Executor): Promise<{ members: number; pending: number }> {
+export async function countSeats(
+  tx: Executor,
+): Promise<{ members: number; pending: number }> {
   const [m] = await tx.select({ n: count() }).from(memberships);
   const [i] = await tx
     .select({ n: count() })

@@ -23,8 +23,19 @@
  * database constraint exists to prevent.
  */
 
-import { intersect, normalize, overlaps, padAll, slice, type Interval } from "./interval";
-import { expandScheduleBetween, type Schedule, ScheduleError } from "./schedule";
+import {
+  intersect,
+  normalize,
+  overlaps,
+  padAll,
+  slice,
+  type Interval,
+} from "./interval";
+import {
+  expandScheduleBetween,
+  type Schedule,
+  ScheduleError,
+} from "./schedule";
 import { DAY, MINUTE } from "./zone";
 
 /** How a service is booked. All durations are in minutes. */
@@ -100,7 +111,9 @@ function validatePolicy(p: ServicePolicy): void {
   ];
   for (const [name, value] of positive) {
     if (!Number.isFinite(value) || (value as number) <= 0) {
-      throw new AvailabilityError(`${name} must be a positive number of minutes, got ${value}`);
+      throw new AvailabilityError(
+        `${name} must be a positive number of minutes, got ${value}`,
+      );
     }
   }
   const nonNegative: [string, number | undefined][] = [
@@ -120,9 +133,15 @@ function validatePolicy(p: ServicePolicy): void {
 /** The busy intervals a resource has, grown by each appointment's own buffers. */
 function blockedBy(busy: readonly Busy[]): Interval[] {
   return normalize(
-    busy.map((b) =>
-      padAll([b.interval], (b.bufferBeforeMinutes ?? 0) * MINUTE, (b.bufferAfterMinutes ?? 0) * MINUTE),
-    ).flat(),
+    busy
+      .map((b) =>
+        padAll(
+          [b.interval],
+          (b.bufferBeforeMinutes ?? 0) * MINUTE,
+          (b.bufferAfterMinutes ?? 0) * MINUTE,
+        ),
+      )
+      .flat(),
   );
 }
 
@@ -137,7 +156,9 @@ export function bookableWindow(service: ServicePolicy, now: number): Interval {
   // Measured in days from now rather than calendar days, which is what
   // "we take bookings 60 days ahead" means and avoids a second zone question.
   const end =
-    advanceDays === undefined ? Number.MAX_SAFE_INTEGER : now + advanceDays * 24 * 60 * MINUTE;
+    advanceDays === undefined
+      ? Number.MAX_SAFE_INTEGER
+      : now + advanceDays * 24 * 60 * MINUTE;
   return { start, end: Math.max(start, end) };
 }
 
@@ -213,15 +234,23 @@ export function availableSlots(query: AvailabilityQuery): Slot[] {
     }
     if (open.length === 0) continue;
 
-    const blocked = normalize([...sharedBlocked, ...blockedBy(resource.busy ?? [])]);
+    const blocked = normalize([
+      ...sharedBlocked,
+      ...blockedBy(resource.busy ?? []),
+    ]);
 
     for (const span of open) {
       // Candidate starts come from the opening hours, so the offered times are
       // stable from day to day, and are then aligned to the grid.
-      const from = align > 0 ? Math.ceil(span.start / align) * align : span.start;
+      const from =
+        align > 0 ? Math.ceil(span.start / align) * align : span.start;
       if (from + duration > span.end) continue;
 
-      for (const slot of slice({ start: from, end: span.end }, duration, step)) {
+      for (const slot of slice(
+        { start: from, end: span.end },
+        duration,
+        step,
+      )) {
         // The bookable window filters the finished slot; it never shapes the
         // grid. The slot has to lie entirely inside it, since a booking that
         // starts inside the window and ends outside it is still a booking.
@@ -238,7 +267,11 @@ export function availableSlots(query: AvailabilityQuery): Slot[] {
 
         const existing = byStart.get(slot.start);
         if (existing) existing.resourceIds.push(resource.id);
-        else byStart.set(slot.start, { end: slot.end, resourceIds: [resource.id] });
+        else
+          byStart.set(slot.start, {
+            end: slot.end,
+            resourceIds: [resource.id],
+          });
       }
     }
   }
@@ -260,14 +293,18 @@ export function availableSlots(query: AvailabilityQuery): Slot[] {
 export function isSlotBookable(
   query: AvailabilityQuery,
   slot: { start: number; resourceId?: string },
-): { ok: true; resourceIds: readonly string[] } | { ok: false; reason: string } {
+):
+  { ok: true; resourceIds: readonly string[] } | { ok: false; reason: string } {
   const duration = query.service.durationMinutes * MINUTE;
   const end = slot.start + duration;
 
   const allowed = bookableWindow(query.service, query.now);
   if (slot.start < allowed.start) {
     const notice = query.service.minimumNoticeMinutes ?? 0;
-    return { ok: false, reason: `bookings need at least ${notice} minutes' notice` };
+    return {
+      ok: false,
+      reason: `bookings need at least ${notice} minutes' notice`,
+    };
   }
   if (slot.start > allowed.end) {
     return {
@@ -298,7 +335,10 @@ export function isSlotBookable(
   if (!match) return { ok: false, reason: "that time is no longer available" };
 
   if (slot.resourceId && !match.resourceIds.includes(slot.resourceId)) {
-    return { ok: false, reason: "that member of staff is no longer available at that time" };
+    return {
+      ok: false,
+      reason: "that member of staff is no longer available at that time",
+    };
   }
   return {
     ok: true,

@@ -19,8 +19,10 @@ describe("permission matrix", () => {
   });
 
   it("is monotonic: each role holds everything the role below it holds", () => {
-    for (const p of PERMISSION_MATRIX.member) expect(PERMISSION_MATRIX.admin.has(p)).toBe(true);
-    for (const p of PERMISSION_MATRIX.admin) expect(PERMISSION_MATRIX.owner.has(p)).toBe(true);
+    for (const p of PERMISSION_MATRIX.member)
+      expect(PERMISSION_MATRIX.admin.has(p)).toBe(true);
+    for (const p of PERMISSION_MATRIX.admin)
+      expect(PERMISSION_MATRIX.owner.has(p)).toBe(true);
   });
 
   it.each<[Permission, boolean, boolean]>([
@@ -29,7 +31,7 @@ describe("permission matrix", () => {
     ["members:invite", true, false],
     ["api_keys:manage", true, false],
     ["audit:read", true, false],
-    ["projects:write", true, true],
+    ["bookings:write", true, true],
     ["billing:read", true, true],
   ])("%s: admin=%s member=%s", (permission, admin, member) => {
     expect(can(user("admin"), permission)).toBe(admin);
@@ -37,9 +39,13 @@ describe("permission matrix", () => {
   });
 
   it("limits api keys to their scopes", () => {
-    const key = { kind: "api_key" as const, keyId: "k", scopes: ["projects:read" as const] };
-    expect(can(key, "projects:read")).toBe(true);
-    expect(can(key, "projects:write")).toBe(false);
+    const key = {
+      kind: "api_key" as const,
+      keyId: "k",
+      scopes: ["bookings:read" as const],
+    };
+    expect(can(key, "bookings:read")).toBe(true);
+    expect(can(key, "bookings:write")).toBe(false);
     expect(can(key, "members:invite")).toBe(false);
   });
 

@@ -17,7 +17,10 @@ export interface AuditEntry {
   request?: RequestMeta;
 }
 
-export async function recordAudit(db: Executor, entry: AuditEntry): Promise<void> {
+export async function recordAudit(
+  db: Executor,
+  entry: AuditEntry,
+): Promise<void> {
   await db.insert(auditLogs).values({
     orgId: entry.orgId,
     actorType: entry.actor.kind,

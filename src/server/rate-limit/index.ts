@@ -17,7 +17,11 @@ export interface RateLimitResult {
 }
 
 export interface RateLimiter {
-  consume(key: string, policy: RateLimitPolicy, cost?: number): Promise<RateLimitResult>;
+  consume(
+    key: string,
+    policy: RateLimitPolicy,
+    cost?: number,
+  ): Promise<RateLimitResult>;
 }
 
 function result(
@@ -31,7 +35,8 @@ function result(
     allowed,
     remaining: Math.max(0, Math.floor(tokens)),
     limit: policy.capacity,
-    retryAfterMs: deficit > 0 ? Math.ceil((deficit / policy.refillPerSecond) * 1000) : 0,
+    retryAfterMs:
+      deficit > 0 ? Math.ceil((deficit / policy.refillPerSecond) * 1000) : 0,
   };
 }
 
@@ -44,12 +49,19 @@ export class MemoryRateLimiter implements RateLimiter {
     private readonly maxKeys = 10_000,
   ) {}
 
-  async consume(key: string, policy: RateLimitPolicy, cost = 1): Promise<RateLimitResult> {
+  async consume(
+    key: string,
+    policy: RateLimitPolicy,
+    cost = 1,
+  ): Promise<RateLimitResult> {
     const now = this.now();
     const prev = this.buckets.get(key);
     const elapsed = prev ? Math.max(0, now - prev.at) / 1000 : 0;
     const available = prev
-      ? Math.min(policy.capacity, prev.tokens + elapsed * policy.refillPerSecond)
+      ? Math.min(
+          policy.capacity,
+          prev.tokens + elapsed * policy.refillPerSecond,
+        )
       : policy.capacity;
     const allowed = available >= cost;
     const tokens = allowed ? available - cost : available;
@@ -72,11 +84,18 @@ export class MemoryRateLimiter implements RateLimiter {
 export class PostgresRateLimiter implements RateLimiter {
   constructor(private readonly db: Database) {}
 
-  async consume(key: string, policy: RateLimitPolicy, cost = 1): Promise<RateLimitResult> {
+  async consume(
+    key: string,
+    policy: RateLimitPolicy,
+    cost = 1,
+  ): Promise<RateLimitResult> {
     const cap = policy.capacity;
     const rate = policy.refillPerSecond;
     const refilled = sql`least(${cap}::float8, r.tokens + extract(epoch from (clock_timestamp() - r.updated_at)) * ${rate}::float8)`;
-    const rows = await this.db.execute<{ tokens: number; allowed: boolean }>(sql`
+    const rows = await this.db.execute<{
+      tokens: number;
+      allowed: boolean;
+    }>(sql`
       insert into rate_limits as r (key, tokens, allowed, updated_at)
       values (${key}, greatest(${cap}::float8 - ${cost}::float8, 0), ${cost} <= ${cap}, clock_timestamp())
       on conflict (key) do update set

@@ -14,18 +14,33 @@ export const PERMISSIONS = [
   "api_keys:read",
   "api_keys:manage",
   "audit:read",
-  "projects:read",
-  "projects:write",
+  // The booking domain. Read and write are separated because a front-desk
+  // member of staff needs to take bookings, while an integration that only
+  // syncs a calendar needs to see them and nothing more.
+  "bookings:read",
+  "bookings:write",
+  "schedule:read",
+  "schedule:write",
+  "services:read",
+  "services:write",
+  "customers:read",
+  "customers:write",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 
+// A member is front-desk staff: they take and change bookings and see the
+// diary, but they do not define what the business sells or when it opens.
 const MEMBER: readonly Permission[] = [
   "org:read",
   "members:read",
   "billing:read",
-  "projects:read",
-  "projects:write",
+  "bookings:read",
+  "bookings:write",
+  "schedule:read",
+  "services:read",
+  "customers:read",
+  "customers:write",
 ];
 
 const ADMIN: readonly Permission[] = [
@@ -37,9 +52,13 @@ const ADMIN: readonly Permission[] = [
   "api_keys:read",
   "api_keys:manage",
   "audit:read",
+  "schedule:write",
+  "services:write",
 ];
 
-export const PERMISSION_MATRIX: Readonly<Record<Role, ReadonlySet<Permission>>> = {
+export const PERMISSION_MATRIX: Readonly<
+  Record<Role, ReadonlySet<Permission>>
+> = {
   owner: new Set(PERMISSIONS),
   admin: new Set(ADMIN),
   member: new Set(MEMBER),
@@ -48,7 +67,14 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, ReadonlySet<Permission>>> 
 const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 };
 
 /** Scopes an API key may carry. Keys never get member-management or billing rights. */
-export const API_KEY_SCOPES = ["projects:read", "projects:write", "audit:read"] as const;
+export const API_KEY_SCOPES = [
+  "bookings:read",
+  "bookings:write",
+  "schedule:read",
+  "services:read",
+  "customers:read",
+  "audit:read",
+] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 export type Actor =
@@ -56,13 +82,16 @@ export type Actor =
   | { kind: "api_key"; keyId: string; scopes: readonly ApiKeyScope[] };
 
 export function can(actor: Actor, permission: Permission): boolean {
-  if (actor.kind === "user") return PERMISSION_MATRIX[actor.role].has(permission);
+  if (actor.kind === "user")
+    return PERMISSION_MATRIX[actor.role].has(permission);
   return (actor.scopes as readonly string[]).includes(permission);
 }
 
 export function assertCan(actor: Actor, permission: Permission): void {
   if (!can(actor, permission)) {
-    throw new AppError("forbidden", `missing permission ${permission}`, { permission });
+    throw new AppError("forbidden", `missing permission ${permission}`, {
+      permission,
+    });
   }
 }
 

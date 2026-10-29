@@ -42,7 +42,11 @@ export function withTenant<T>(
 }
 
 /** Runs `fn` with no org selected; only the user's own memberships are visible. */
-export function withUser<T>(db: Database, userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export function withUser<T>(
+  db: Database,
+  userId: string,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
   return db.transaction(async (tx) => {
     await enterTenant(tx, { orgId: null, userId });
     return fn(tx);

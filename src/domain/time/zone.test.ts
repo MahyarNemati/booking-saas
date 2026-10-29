@@ -55,8 +55,16 @@ describe("partsOf", () => {
   it("crosses the date line correctly", () => {
     // 23:00 UTC is already tomorrow in Auckland and still today in Honolulu.
     const instant = Date.UTC(2026, 0, 15, 23, 0, 0);
-    expect(dateOf(instant, "Pacific/Auckland")).toEqual({ year: 2026, month: 1, day: 16 });
-    expect(dateOf(instant, "Pacific/Honolulu")).toEqual({ year: 2026, month: 1, day: 15 });
+    expect(dateOf(instant, "Pacific/Auckland")).toEqual({
+      year: 2026,
+      month: 1,
+      day: 16,
+    });
+    expect(dateOf(instant, "Pacific/Honolulu")).toEqual({
+      year: 2026,
+      month: 1,
+      day: 15,
+    });
   });
 
   it("renders midnight as hour 0, not hour 24", () => {
@@ -120,7 +128,12 @@ describe("resolve", () => {
   });
 
   it("resolves exactly in a zone with no daylight saving at all", () => {
-    for (const zone of ["UTC", "Asia/Tokyo", "Asia/Kolkata", "America/Phoenix"]) {
+    for (const zone of [
+      "UTC",
+      "Asia/Tokyo",
+      "Asia/Kolkata",
+      "America/Phoenix",
+    ]) {
       const r = resolve(wall(2026, 3, 29, 1, 30), zone);
       expect(r.kind, zone).toBe("exact");
     }
@@ -131,21 +144,29 @@ describe("instantOf", () => {
   it("shifts a nonexistent time forward by default", () => {
     // 01:30 did not happen, and "half past one" on that day means 02:30 to a
     // person. Shifting is the only answer that keeps the appointment.
-    const instant = instantOf(wall(2026, 3, 29, 1, 30), "Europe/London", "shift");
+    const instant = instantOf(
+      wall(2026, 3, 29, 1, 30),
+      "Europe/London",
+      "shift",
+    );
     expect(iso(instant)).toBe("2026-03-29T01:30:00.000Z");
     expect(partsOf(instant, "Europe/London")).toEqual(wall(2026, 3, 29, 2, 30));
   });
 
   it("can reject a nonexistent time instead", () => {
     // What a form should do with a time a customer typed.
-    expect(() => instantOf(wall(2026, 3, 29, 1, 30), "Europe/London", "reject")).toThrow(
-      /does not exist/,
-    );
+    expect(() =>
+      instantOf(wall(2026, 3, 29, 1, 30), "Europe/London", "reject"),
+    ).toThrow(/does not exist/);
   });
 
   it("takes the earlier of two ambiguous times by default", () => {
     const earlier = instantOf(wall(2026, 10, 25, 1, 30), "Europe/London");
-    const later = instantOf(wall(2026, 10, 25, 1, 30), "Europe/London", "later");
+    const later = instantOf(
+      wall(2026, 10, 25, 1, 30),
+      "Europe/London",
+      "later",
+    );
     expect(iso(earlier)).toBe("2026-10-25T00:30:00.000Z");
     expect(iso(later)).toBe("2026-10-25T01:30:00.000Z");
   });
@@ -176,15 +197,27 @@ describe("instantOf", () => {
 
 describe("atMinuteOfDay", () => {
   it("places an opening time on a normal day", () => {
-    const instant = atMinuteOfDay({ year: 2026, month: 7, day: 1 }, 9 * 60, "Europe/London");
+    const instant = atMinuteOfDay(
+      { year: 2026, month: 7, day: 1 },
+      9 * 60,
+      "Europe/London",
+    );
     expect(iso(instant)).toBe("2026-07-01T08:00:00.000Z");
   });
 
   it("gives the same wall-clock hour on both sides of a transition", () => {
     // This is the whole reason opening hours are stored as local times: 09:00
     // stays 09:00, and the UTC instant moves.
-    const before = atMinuteOfDay({ year: 2026, month: 3, day: 28 }, 9 * 60, "Europe/London");
-    const after = atMinuteOfDay({ year: 2026, month: 3, day: 30 }, 9 * 60, "Europe/London");
+    const before = atMinuteOfDay(
+      { year: 2026, month: 3, day: 28 },
+      9 * 60,
+      "Europe/London",
+    );
+    const after = atMinuteOfDay(
+      { year: 2026, month: 3, day: 30 },
+      9 * 60,
+      "Europe/London",
+    );
     expect(minuteOfDayAt(before, "Europe/London")).toBe(9 * 60);
     expect(minuteOfDayAt(after, "Europe/London")).toBe(9 * 60);
     // Two days apart on the clock, but one hour less than 48 hours of elapsed
@@ -195,23 +228,30 @@ describe("atMinuteOfDay", () => {
   it("handles a minute of day past midnight, for a business open late", () => {
     // A bar open until 02:00 describes itself as 18:00–26:00, which is the
     // case that breaks hour/minute pairs.
-    const instant = atMinuteOfDay({ year: 2026, month: 7, day: 1 }, 26 * 60, "Europe/London");
+    const instant = atMinuteOfDay(
+      { year: 2026, month: 7, day: 1 },
+      26 * 60,
+      "Europe/London",
+    );
     expect(partsOf(instant, "Europe/London")).toEqual(wall(2026, 7, 2, 2));
   });
 
   it("rejects a nonsensical minute of day", () => {
-    expect(() => atMinuteOfDay({ year: 2026, month: 7, day: 1 }, -60, "UTC")).toThrow(
-      TimeZoneError,
-    );
-    expect(() => atMinuteOfDay({ year: 2026, month: 7, day: 1 }, 1.5, "UTC")).toThrow(
-      TimeZoneError,
-    );
+    expect(() =>
+      atMinuteOfDay({ year: 2026, month: 7, day: 1 }, -60, "UTC"),
+    ).toThrow(TimeZoneError);
+    expect(() =>
+      atMinuteOfDay({ year: 2026, month: 7, day: 1 }, 1.5, "UTC"),
+    ).toThrow(TimeZoneError);
   });
 });
 
 describe("startOfDay", () => {
   it("is local midnight, not UTC midnight", () => {
-    const instant = startOfDay({ year: 2026, month: 7, day: 1 }, "America/New_York");
+    const instant = startOfDay(
+      { year: 2026, month: 7, day: 1 },
+      "America/New_York",
+    );
     expect(iso(instant)).toBe("2026-07-01T04:00:00.000Z");
     expect(partsOf(instant, "America/New_York")).toEqual(wall(2026, 7, 1, 0));
   });
@@ -219,17 +259,32 @@ describe("startOfDay", () => {
   it("survives a zone where midnight itself moved", () => {
     // Samoa skipped 2011-12-30 entirely when it changed side of the date
     // line, so that date has no midnight -- and no instants at all.
-    const instant = startOfDay({ year: 2011, month: 12, day: 30 }, "Pacific/Apia");
+    const instant = startOfDay(
+      { year: 2011, month: 12, day: 30 },
+      "Pacific/Apia",
+    );
     expect(Number.isFinite(instant)).toBe(true);
   });
 
   it("gives a day that is 23 or 25 hours long across a transition", () => {
-    const spring = startOfDay({ year: 2026, month: 3, day: 29 }, "Europe/London");
-    const nextDay = startOfDay({ year: 2026, month: 3, day: 30 }, "Europe/London");
+    const spring = startOfDay(
+      { year: 2026, month: 3, day: 29 },
+      "Europe/London",
+    );
+    const nextDay = startOfDay(
+      { year: 2026, month: 3, day: 30 },
+      "Europe/London",
+    );
     expect(nextDay - spring).toBe(23 * 60 * 60_000);
 
-    const autumn = startOfDay({ year: 2026, month: 10, day: 25 }, "Europe/London");
-    const after = startOfDay({ year: 2026, month: 10, day: 26 }, "Europe/London");
+    const autumn = startOfDay(
+      { year: 2026, month: 10, day: 25 },
+      "Europe/London",
+    );
+    const after = startOfDay(
+      { year: 2026, month: 10, day: 26 },
+      "Europe/London",
+    );
     expect(after - autumn).toBe(25 * 60 * 60_000);
   });
 });
@@ -269,7 +324,10 @@ describe("date helpers", () => {
   });
 
   it("lists an inclusive range of dates", () => {
-    const dates = datesBetween({ year: 2026, month: 2, day: 27 }, { year: 2026, month: 3, day: 1 });
+    const dates = datesBetween(
+      { year: 2026, month: 2, day: 27 },
+      { year: 2026, month: 3, day: 1 },
+    );
     expect(dates).toEqual([
       { year: 2026, month: 2, day: 27 },
       { year: 2026, month: 2, day: 28 },
@@ -279,13 +337,19 @@ describe("date helpers", () => {
 
   it("returns nothing for a backwards range rather than looping", () => {
     expect(
-      datesBetween({ year: 2026, month: 3, day: 1 }, { year: 2026, month: 2, day: 1 }),
+      datesBetween(
+        { year: 2026, month: 3, day: 1 },
+        { year: 2026, month: 2, day: 1 },
+      ),
     ).toEqual([]);
   });
 
   it("refuses a range longer than ten years", () => {
     expect(() =>
-      datesBetween({ year: 2000, month: 1, day: 1 }, { year: 2030, month: 1, day: 1 }),
+      datesBetween(
+        { year: 2000, month: 1, day: 1 },
+        { year: 2030, month: 1, day: 1 },
+      ),
     ).toThrow(/narrow the query/);
   });
 

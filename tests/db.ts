@@ -42,7 +42,8 @@ export async function pgError(
   try {
     await promise;
   } catch (err) {
-    const cause = err instanceof Error && err.cause instanceof Error ? err.cause : err;
+    const cause =
+      err instanceof Error && err.cause instanceof Error ? err.cause : err;
     return cause as { code?: string; message: string };
   }
   throw new Error("expected the query to fail");

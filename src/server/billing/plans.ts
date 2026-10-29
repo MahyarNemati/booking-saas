@@ -1,22 +1,30 @@
 import type { Plan, Subscription } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 
-export type Feature = "api_keys" | "audit_log" | "sso";
+export type Feature = "api_keys" | "audit_log" | "sso" | "sms_reminders";
 
 export interface Entitlements {
   plan: Plan;
   /** null means unlimited. */
   maxSeats: number | null;
-  maxProjects: number | null;
+  /**
+   * Appointments a month. The meter that matters for a booking product:
+   * seats measure the business, bookings measure the usage.
+   */
+  maxAppointmentsPerMonth: number | null;
   features: ReadonlySet<Feature>;
 }
 
 const PLAN_LIMITS: Record<Plan, Omit<Entitlements, "plan">> = {
-  free: { maxSeats: 3, maxProjects: 3, features: new Set() },
-  pro: { maxSeats: null, maxProjects: 100, features: new Set(["api_keys", "audit_log"]) },
+  free: { maxSeats: 3, maxAppointmentsPerMonth: 100, features: new Set() },
+  pro: {
+    maxSeats: null,
+    maxAppointmentsPerMonth: 5000,
+    features: new Set(["api_keys", "audit_log", "sms_reminders"]),
+  },
   enterprise: {
     maxSeats: null,
-    maxProjects: null,
+    maxAppointmentsPerMonth: null,
     features: new Set(["api_keys", "audit_log", "sso"]),
   },
 };
@@ -24,7 +32,9 @@ const PLAN_LIMITS: Record<Plan, Omit<Entitlements, "plan">> = {
 /** Stripe statuses that still grant paid features. past_due keeps access during dunning. */
 const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-export function effectivePlan(sub: Pick<Subscription, "plan" | "status"> | null | undefined): Plan {
+export function effectivePlan(
+  sub: Pick<Subscription, "plan" | "status"> | null | undefined,
+): Plan {
   if (!sub || !ENTITLED_STATUSES.has(sub.status)) return "free";
   return sub.plan;
 }
@@ -43,16 +53,28 @@ export function hasFeature(ent: Entitlements, feature: Feature): boolean {
 
 export function assertFeature(ent: Entitlements, feature: Feature): void {
   if (!hasFeature(ent, feature)) {
-    throw new AppError("payment_required", `the ${ent.plan} plan does not include ${feature}`, {
-      feature,
-      plan: ent.plan,
-    });
+    throw new AppError(
+      "payment_required",
+      `the ${ent.plan} plan does not include ${feature}`,
+      {
+        feature,
+        plan: ent.plan,
+      },
+    );
   }
 }
 
-export function assertWithinLimit(limit: number | null, used: number, what: string): void {
+export function assertWithinLimit(
+  limit: number | null,
+  used: number,
+  what: string,
+): void {
   if (limit !== null && used >= limit) {
-    throw new AppError("payment_required", `${what} limit of ${limit} reached`, { limit, used });
+    throw new AppError(
+      "payment_required",
+      `${what} limit of ${limit} reached`,
+      { limit, used },
+    );
   }
 }
 
@@ -61,7 +83,10 @@ export interface PriceCatalog {
   enterprise?: string;
 }
 
-export function planForPrice(catalog: PriceCatalog, priceId: string): Plan | null {
+export function planForPrice(
+  catalog: PriceCatalog,
+  priceId: string,
+): Plan | null {
   if (catalog.pro && priceId === catalog.pro) return "pro";
   if (catalog.enterprise && priceId === catalog.enterprise) return "enterprise";
   return null;

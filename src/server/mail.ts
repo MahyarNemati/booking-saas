@@ -22,12 +22,17 @@ export class ResendMailer implements Mailer {
   async send(message: MailMessage): Promise<void> {
     const res = await this.fetchImpl("https://api.resend.com/emails", {
       method: "POST",
-      headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ from: this.from, ...message }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      throw new Error(`resend rejected message: ${res.status} ${await res.text()}`);
+      throw new Error(
+        `resend rejected message: ${res.status} ${await res.text()}`,
+      );
     }
   }
 }
@@ -40,7 +45,10 @@ export class DevMailer implements Mailer {
   ) {}
 
   async send(message: MailMessage): Promise<void> {
-    this.logger.info({ to: message.to, subject: message.subject, body: message.text }, "dev mail");
+    this.logger.info(
+      { to: message.to, subject: message.subject, body: message.text },
+      "dev mail",
+    );
     if (this.outbox) {
       await appendFile(
         this.outbox,

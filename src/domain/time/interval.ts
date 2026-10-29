@@ -23,7 +23,9 @@ export class IntervalError extends Error {}
 
 export function interval(start: number, end: number): Interval {
   if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    throw new IntervalError(`interval bounds must be finite, got [${start}, ${end})`);
+    throw new IntervalError(
+      `interval bounds must be finite, got [${start}, ${end})`,
+    );
   }
   if (end < start) {
     throw new IntervalError(`interval end ${end} is before its start ${start}`);
@@ -77,13 +79,16 @@ export function intersection(a: Interval, b: Interval): Interval | null {
  * across noon look impossible.
  */
 export function normalize(intervals: readonly Interval[]): Interval[] {
-  const sorted = intervals.filter((i) => !isEmpty(i)).sort((a, b) => a.start - b.start);
+  const sorted = intervals
+    .filter((i) => !isEmpty(i))
+    .sort((a, b) => a.start - b.start);
 
   const out: Interval[] = [];
   for (const next of sorted) {
     const last = out.at(-1);
     if (last && next.start <= last.end) {
-      if (next.end > last.end) out[out.length - 1] = { start: last.start, end: next.end };
+      if (next.end > last.end)
+        out[out.length - 1] = { start: last.start, end: next.end };
     } else {
       out.push({ start: next.start, end: next.end });
     }
@@ -91,12 +96,18 @@ export function normalize(intervals: readonly Interval[]): Interval[] {
   return out;
 }
 
-export function union(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+export function union(
+  a: readonly Interval[],
+  b: readonly Interval[],
+): Interval[] {
   return normalize([...a, ...b]);
 }
 
 /** Every part of `a` that is also in `b`. */
-export function intersect(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+export function intersect(
+  a: readonly Interval[],
+  b: readonly Interval[],
+): Interval[] {
   const left = normalize(a);
   const right = normalize(b);
   const out: Interval[] = [];
@@ -119,7 +130,10 @@ export function intersect(a: readonly Interval[], b: readonly Interval[]): Inter
 }
 
 /** Every part of `a` that is not in `b`. */
-export function subtract(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+export function subtract(
+  a: readonly Interval[],
+  b: readonly Interval[],
+): Interval[] {
   const keep = normalize(a);
   const remove = normalize(b);
   const out: Interval[] = [];
@@ -136,7 +150,8 @@ export function subtract(a: readonly Interval[], b: readonly Interval[]): Interv
     while (k < remove.length) {
       const gap = remove[k]!;
       if (gap.start >= span.end) break;
-      if (gap.start > cursor) out.push({ start: cursor, end: Math.min(gap.start, span.end) });
+      if (gap.start > cursor)
+        out.push({ start: cursor, end: Math.min(gap.start, span.end) });
       cursor = Math.max(cursor, gap.end);
       if (cursor >= span.end) break;
       k += 1;
@@ -147,7 +162,10 @@ export function subtract(a: readonly Interval[], b: readonly Interval[]): Interv
 }
 
 /** The gaps between the intervals of a normalised set, within `bounds`. */
-export function complement(intervals: readonly Interval[], bounds: Interval): Interval[] {
+export function complement(
+  intervals: readonly Interval[],
+  bounds: Interval,
+): Interval[] {
   return subtract([bounds], intervals);
 }
 
@@ -183,9 +201,15 @@ export function padAll(
  * `step` 60. Deriving one from the other is the usual shortcut and it makes
  * that case unexpressible.
  */
-export function slice(span: Interval, length: number, step: number): Interval[] {
-  if (length <= 0) throw new IntervalError(`slot length must be positive, got ${length}`);
-  if (step <= 0) throw new IntervalError(`slot step must be positive, got ${step}`);
+export function slice(
+  span: Interval,
+  length: number,
+  step: number,
+): Interval[] {
+  if (length <= 0)
+    throw new IntervalError(`slot length must be positive, got ${length}`);
+  if (step <= 0)
+    throw new IntervalError(`slot step must be positive, got ${step}`);
 
   const out: Interval[] = [];
   for (let start = span.start; start + length <= span.end; start += step) {
@@ -207,7 +231,9 @@ export function sliceAll(
     // expects (09:00, 09:30) rather than whatever the opening time happens to
     // be plus a multiple of the step.
     const from =
-      alignTo && alignTo > 0 ? Math.ceil(span.start / alignTo) * alignTo : span.start;
+      alignTo && alignTo > 0
+        ? Math.ceil(span.start / alignTo) * alignTo
+        : span.start;
     if (from + length > span.end) continue;
     out.push(...slice({ start: from, end: span.end }, length, step));
   }

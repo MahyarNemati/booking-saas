@@ -12,7 +12,7 @@ import {
 import { MemoryMailer } from "@/server/mail";
 import { changeMemberRole, listMembers, removeMember } from "@/server/members";
 import { createOrganization, listUserOrganizations } from "@/server/orgs";
-import { createProject } from "@/server/projects";
+import { createService } from "@/server/booking/catalogue";
 import type { Actor } from "@/server/rbac";
 import { createUser, hasDatabase, testDb } from "./db";
 
@@ -26,16 +26,27 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
   beforeEach(async () => {
     mailer = new MemoryMailer();
     owner = await createUser(db, "owner");
-    orgId = (await createOrganization(db, { userId: owner.id, name: "Team" })).id;
+    orgId = (await createOrganization(db, { userId: owner.id, name: "Team" }))
+      .id;
     ownerActor = { kind: "user", userId: owner.id, role: "owner" };
   });
 
-  const tenant = <T>(fn: Parameters<typeof withTenant<T>>[2]) => withTenant(db, { orgId }, fn);
+  const tenant = <T>(fn: Parameters<typeof withTenant<T>>[2]) =>
+    withTenant(db, { orgId }, fn);
   const deps = () => ({ mailer, appUrl: "http://app.test" });
 
-  async function invite(email: string, role: "admin" | "member" = "member", actor = ownerActor) {
+  async function invite(
+    email: string,
+    role: "admin" | "member" = "member",
+    actor = ownerActor,
+  ) {
     return tenant((tx) =>
-      createInvitation(tx, deps(), actor, { orgId, orgName: "Team", email, role }),
+      createInvitation(tx, deps(), actor, {
+        orgId,
+        orgName: "Team",
+        email,
+        role,
+      }),
     );
   }
 
@@ -52,7 +63,11 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0]?.text).toContain(`http://app.test/invite/${token}`);
 
-    const result = await acceptInvitation(db, { token, userId: invitee.id, email: invitee.email });
+    const result = await acceptInvitation(db, {
+      token,
+      userId: invitee.id,
+      email: invitee.email,
+    });
     expect(result.role).toBe("member");
     const orgs = await listUserOrganizations(db, invitee.id);
     expect(orgs.map((o) => o.org.id)).toEqual([orgId]);
@@ -67,17 +82,23 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
     const stranger = await createUser(db, "stranger");
     const { token } = await invite(invitee.email);
     await expect(
-      acceptInvitation(db, { token, userId: stranger.id, email: stranger.email }),
+      acceptInvitation(db, {
+        token,
+        userId: stranger.id,
+        email: stranger.email,
+      }),
     ).rejects.toMatchObject({ code: "forbidden" });
   });
 
   it("refuses revoked and expired invitations", async () => {
     const a = await createUser(db, "a");
     const { token, invitation } = await invite(a.email);
-    await tenant((tx) => revokeInvitation(tx, ownerActor, { orgId, invitationId: invitation.id }));
-    await expect(acceptInvitation(db, { token, userId: a.id, email: a.email })).rejects.toThrow(
-      AppError,
+    await tenant((tx) =>
+      revokeInvitation(tx, ownerActor, { orgId, invitationId: invitation.id }),
     );
+    await expect(
+      acceptInvitation(db, { token, userId: a.id, email: a.email }),
+    ).rejects.toThrow(AppError);
 
     const b = await createUser(db, "b");
     const past = new Date(Date.now() - 8 * 24 * 3600 * 1000);
@@ -90,20 +111,30 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
       }),
     );
     await expect(
-      acceptInvitation(db, { token: expired.token, userId: b.id, email: b.email }),
+      acceptInvitation(db, {
+        token: expired.token,
+        userId: b.id,
+        email: b.email,
+      }),
     ).rejects.toMatchObject({ code: "invalid" });
   });
 
   it("rejects a second pending invitation to the same address", async () => {
     await invite("dup@example.test");
-    await expect(invite("dup@example.test")).rejects.toMatchObject({ code: "conflict" });
+    await expect(invite("dup@example.test")).rejects.toMatchObject({
+      code: "conflict",
+    });
   });
 
   it("counts members and pending invitations against the free plan seat limit", async () => {
     await join();
     await invite("third@example.test");
-    await expect(invite("fourth@example.test")).rejects.toMatchObject({ code: "payment_required" });
-    const pending = await tenant((tx) => listPendingInvitations(tx, ownerActor));
+    await expect(invite("fourth@example.test")).rejects.toMatchObject({
+      code: "payment_required",
+    });
+    const pending = await tenant((tx) =>
+      listPendingInvitations(tx, ownerActor),
+    );
     expect(pending).toHaveLength(1);
   });
 
@@ -140,7 +171,11 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
     const ownerRow = members.find((m) => m.userId === owner.id)!;
     await expect(
       tenant((tx) =>
-        changeMemberRole(tx, adminActor, { orgId, membershipId: ownerRow.id, role: "member" }),
+        changeMemberRole(tx, adminActor, {
+          orgId,
+          membershipId: ownerRow.id,
+          role: "member",
+        }),
       ),
     ).rejects.toMatchObject({ code: "forbidden" });
   });
@@ -150,17 +185,27 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
     const self = members[0]!;
     await expect(
       tenant((tx) =>
-        changeMemberRole(tx, ownerActor, { orgId, membershipId: self.id, role: "admin" }),
+        changeMemberRole(tx, ownerActor, {
+          orgId,
+          membershipId: self.id,
+          role: "admin",
+        }),
       ),
     ).rejects.toMatchObject({ code: "conflict" });
     await expect(
-      tenant((tx) => removeMember(tx, ownerActor, { orgId, membershipId: self.id })),
+      tenant((tx) =>
+        removeMember(tx, ownerActor, { orgId, membershipId: self.id }),
+      ),
     ).rejects.toMatchObject({ code: "conflict" });
   });
 
   it("lets members leave and owners remove them, with an audit trail", async () => {
     const member = await join();
-    const memberActor: Actor = { kind: "user", userId: member.id, role: "member" };
+    const memberActor: Actor = {
+      kind: "user",
+      userId: member.id,
+      role: "member",
+    };
     const rows = await tenant((tx) => listMembers(tx, ownerActor));
     const row = rows.find((m) => m.userId === member.id)!;
 
@@ -169,11 +214,17 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
       (m) => m.userId === other.id,
     )!;
     await expect(
-      tenant((tx) => removeMember(tx, memberActor, { orgId, membershipId: otherRow.id })),
+      tenant((tx) =>
+        removeMember(tx, memberActor, { orgId, membershipId: otherRow.id }),
+      ),
     ).rejects.toMatchObject({ code: "forbidden" });
 
-    await tenant((tx) => removeMember(tx, memberActor, { orgId, membershipId: row.id }));
-    await tenant((tx) => removeMember(tx, ownerActor, { orgId, membershipId: otherRow.id }));
+    await tenant((tx) =>
+      removeMember(tx, memberActor, { orgId, membershipId: row.id }),
+    );
+    await tenant((tx) =>
+      removeMember(tx, ownerActor, { orgId, membershipId: otherRow.id }),
+    );
     expect(await tenant((tx) => listMembers(tx, ownerActor))).toHaveLength(1);
 
     const actions = (await tenant((tx) => listAudit(tx))).map((a) => a.action);
@@ -187,20 +238,64 @@ describe.skipIf(!hasDatabase)("members and invitations", () => {
     );
   });
 
-  it("enforces unique project names and the free plan project limit", async () => {
-    await tenant((tx) => createProject(tx, ownerActor, { orgId, name: "a" }));
+  it("derives a service slug from its name and refuses a duplicate", async () => {
+    const created = await tenant((tx) =>
+      createService(tx, ownerActor, {
+        orgId,
+        name: "Hair Cut & Blow Dry",
+        durationMinutes: 45,
+      }),
+    );
+    expect(created.slug).toBe("hair-cut-blow-dry");
+
+    // The slug is what a public booking URL is built from, so two services
+    // cannot share one. The unique index decides, not a prior read, so two
+    // concurrent creates cannot both win.
     await expect(
-      tenant((tx) => createProject(tx, ownerActor, { orgId, name: "a" })),
-    ).rejects.toMatchObject({
-      code: "conflict",
-    });
-    for (const name of ["b", "c"]) {
-      await tenant((tx) => createProject(tx, ownerActor, { orgId, name }));
-    }
+      tenant((tx) =>
+        createService(tx, ownerActor, {
+          orgId,
+          name: "Hair cut & blow dry",
+          durationMinutes: 30,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    // A different name is fine, and the rules are validated as a whole: a
+    // deposit larger than the price is rejected before it reaches a
+    // constraint.
+    await tenant((tx) =>
+      createService(tx, ownerActor, {
+        orgId,
+        name: "Colour",
+        durationMinutes: 90,
+      }),
+    );
     await expect(
-      tenant((tx) => createProject(tx, ownerActor, { orgId, name: "d" })),
-    ).rejects.toMatchObject({
-      code: "payment_required",
-    });
+      tenant((tx) =>
+        createService(tx, ownerActor, {
+          orgId,
+          name: "Perm",
+          durationMinutes: 60,
+          priceMinor: 1000,
+          depositMinor: 2000,
+        }),
+      ),
+    ).rejects.toThrow(/deposit cannot exceed/);
+  });
+
+  it("refuses a service to a member who may read but not write", async () => {
+    // Front-desk staff take bookings; they do not decide what the business
+    // sells. That split is the whole point of having two permissions.
+    const frontDesk: Actor = { kind: "user", userId: owner.id, role: "member" };
+    await expect(
+      tenant((tx) =>
+        createService(tx, frontDesk, {
+          orgId,
+          name: "Cheap",
+          durationMinutes: 5,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
 });

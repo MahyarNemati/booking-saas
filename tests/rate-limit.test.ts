@@ -3,7 +3,9 @@ import { PostgresRateLimiter } from "@/server/rate-limit";
 import { hasDatabase, testDb } from "./db";
 
 describe.skipIf(!hasDatabase)("PostgresRateLimiter", () => {
-  const limiter = hasDatabase ? new PostgresRateLimiter(testDb()) : (undefined as never);
+  const limiter = hasDatabase
+    ? new PostgresRateLimiter(testDb())
+    : (undefined as never);
   const policy = { capacity: 5, refillPerSecond: 0.001 };
 
   it("never admits more than capacity under concurrent load", async () => {

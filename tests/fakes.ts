@@ -3,8 +3,10 @@ import type { BillingProvider } from "@/server/billing/provider";
 
 export class FakeBilling implements BillingProvider {
   readonly subscriptions = new Map<string, Stripe.Subscription>();
-  readonly seatUpdates: Array<{ subscriptionId: string; quantity: number }> = [];
-  readonly checkouts: Array<{ orgId: string; priceId: string; seats: number }> = [];
+  readonly seatUpdates: Array<{ subscriptionId: string; quantity: number }> =
+    [];
+  readonly checkouts: Array<{ orgId: string; priceId: string; seats: number }> =
+    [];
   customers = 0;
 
   async createCustomer(): Promise<string> {
@@ -17,7 +19,11 @@ export class FakeBilling implements BillingProvider {
     priceId: string;
     seats: number;
   }): Promise<string> {
-    this.checkouts.push({ orgId: input.orgId, priceId: input.priceId, seats: input.seats });
+    this.checkouts.push({
+      orgId: input.orgId,
+      priceId: input.priceId,
+      seats: input.seats,
+    });
     return `https://checkout.stripe.test/${input.orgId}`;
   }
 
@@ -31,7 +37,10 @@ export class FakeBilling implements BillingProvider {
     return sub;
   }
 
-  async updateSeatQuantity(subscriptionId: string, quantity: number): Promise<void> {
+  async updateSeatQuantity(
+    subscriptionId: string,
+    quantity: number,
+  ): Promise<void> {
     this.seatUpdates.push({ subscriptionId, quantity });
   }
 

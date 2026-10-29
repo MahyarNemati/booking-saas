@@ -42,12 +42,13 @@ describe.skipIf(!hasDatabase)("api keys", () => {
 
   beforeEach(async () => {
     const user = await createUser(db, "dev");
-    orgId = (await createOrganization(db, { userId: user.id, name: "Keys" })).id;
+    orgId = (await createOrganization(db, { userId: user.id, name: "Keys" }))
+      .id;
     actor = { kind: "user", userId: user.id, role: "owner" };
   });
 
   const create = (
-    scopes: ("projects:read" | "projects:write")[] = ["projects:read"],
+    scopes: ("bookings:read" | "bookings:write")[] = ["bookings:read"],
     expiresInDays?: number,
   ) =>
     withTenant(db, { orgId }, (tx) =>
@@ -60,8 +61,11 @@ describe.skipIf(!hasDatabase)("api keys", () => {
 
   it("stores only a hash and authenticates the plaintext key", async () => {
     await upgrade();
-    const { key, record } = await create(["projects:read"]);
-    const [stored] = await db.select().from(apiKeys).where(eq(apiKeys.id, record.id));
+    const { key, record } = await create(["bookings:read"]);
+    const [stored] = await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.id, record.id));
     expect(stored?.keyHash).not.toContain(key);
     expect(JSON.stringify(record)).not.toContain(key);
     expect("keyHash" in record).toBe(false);
@@ -69,9 +73,12 @@ describe.skipIf(!hasDatabase)("api keys", () => {
     const resolved = await authenticateApiKey(db, key);
     expect(resolved).toMatchObject({
       orgId,
-      actor: { kind: "api_key", keyId: record.id, scopes: ["projects:read"] },
+      actor: { kind: "api_key", keyId: record.id, scopes: ["bookings:read"] },
     });
-    const [touched] = await db.select().from(apiKeys).where(eq(apiKeys.id, record.id));
+    const [touched] = await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.id, record.id));
     expect(touched?.lastUsedAt).toBeInstanceOf(Date);
   });
 
@@ -79,7 +86,9 @@ describe.skipIf(!hasDatabase)("api keys", () => {
     await upgrade();
     const { key } = await create();
     const last = key.at(-1) === "A" ? "B" : "A";
-    await expect(authenticateApiKey(db, key.slice(0, -1) + last)).rejects.toMatchObject({
+    await expect(
+      authenticateApiKey(db, key.slice(0, -1) + last),
+    ).rejects.toMatchObject({
       code: "unauthenticated",
     });
   });
@@ -87,15 +96,19 @@ describe.skipIf(!hasDatabase)("api keys", () => {
   it("rejects revoked keys", async () => {
     await upgrade();
     const { key, record } = await create();
-    await withTenant(db, { orgId }, (tx) => revokeApiKey(tx, actor, { orgId, keyId: record.id }));
+    await withTenant(db, { orgId }, (tx) =>
+      revokeApiKey(tx, actor, { orgId, keyId: record.id }),
+    );
     await expect(authenticateApiKey(db, key)).rejects.toThrow(/revoked/);
-    const listed = await withTenant(db, { orgId }, (tx) => listApiKeys(tx, actor));
+    const listed = await withTenant(db, { orgId }, (tx) =>
+      listApiKeys(tx, actor),
+    );
     expect(listed[0]?.revokedAt).toBeInstanceOf(Date);
   });
 
   it("rejects expired keys", async () => {
     await upgrade();
-    const { key, record } = await create(["projects:read"], 1);
+    const { key, record } = await create(["bookings:read"], 1);
     await db
       .update(apiKeys)
       .set({ expiresAt: new Date(Date.now() - 1000) })
@@ -112,7 +125,11 @@ describe.skipIf(!hasDatabase)("api keys", () => {
     };
     await expect(
       withTenant(db, { orgId }, (tx) =>
-        createApiKey(tx, member, { orgId, name: "x", scopes: ["projects:read"] }),
+        createApiKey(tx, member, {
+          orgId,
+          name: "x",
+          scopes: ["bookings:read"],
+        }),
       ),
     ).rejects.toMatchObject({ code: "forbidden" });
   });

@@ -356,7 +356,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - name: Build the web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           # Named for the same reason compose names it: the default is
@@ -368,7 +368,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build the tools image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: tools

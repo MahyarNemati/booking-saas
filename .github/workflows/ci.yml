@@ -304,7 +304,14 @@ jobs:
       - name: Start, run a pass, stop
         run: |
           set -euo pipefail
-          npm run worker > worker.log 2>&1 &
+          # tsx directly, not `npm run worker`: $! would then be npm's pid,
+          # and whether npm forwards SIGTERM to the process it started
+          # depends on the npm version and the platform. It does on macOS
+          # here and did not on this runner, so the worker's handler never
+          # ran and it read as a shutdown bug in the worker rather than in
+          # the test. One process between you and your signal is one too
+          # many.
+          npx tsx src/worker/main.ts > worker.log 2>&1 &
           pid=$!
           sleep 8
           kill -TERM "$pid"

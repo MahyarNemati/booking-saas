@@ -29,6 +29,13 @@
       "when": 1793239513966,
       "tag": "0003_reminder_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793239513967,
+      "tag": "0004_reminder_lease_constraints",
+      "breakpoints": true
     }
   ]
 }

@@ -62,13 +62,19 @@ async function main(): Promise<void> {
   let stopping = false;
   let ticks = 0;
 
+  // Woken by a signal, so the sleep between passes is interruptible.
+  let wake: (() => void) | null = null;
+
   // SIGTERM arrives on every deploy. Finishing the current pass rather than
-  // dying mid-send means no reminder is left leased for its full timeout.
+  // dying mid-send means no reminder is left leased for its full timeout --
+  // but the wait between passes must not be part of that, or a deploy sits
+  // for up to a tick before the process exits and the orchestrator kills it.
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       if (stopping) process.exit(1); // a second signal means now
       logger.info({ signal }, "worker stopping after the current pass");
       stopping = true;
+      wake?.();
     });
   }
 
@@ -106,10 +112,19 @@ async function main(): Promise<void> {
     }
 
     // Measured from the start of the pass, so a slow pass does not add to the
-    // interval and the worker keeps a steady cadence.
+    // interval and the worker keeps a steady cadence. Interruptible, so a
+    // signal arriving during the wait is acted on at once rather than up to a
+    // tick later.
     const elapsed = Date.now() - startedAt;
     if (!stopping && elapsed < TICK_MS) {
-      await new Promise((resolve) => setTimeout(resolve, TICK_MS - elapsed));
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, TICK_MS - elapsed);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      wake = null;
     }
   }
 

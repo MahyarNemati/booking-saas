@@ -20,10 +20,17 @@ describe.skipIf(!hasDatabase)("PostgresRateLimiter", () => {
 
   it("refills over time", async () => {
     const key = `refill:${Date.now()}`;
-    const fast = { capacity: 1, refillPerSecond: 20 };
-    expect((await limiter.consume(key, fast)).allowed).toBe(true);
-    expect((await limiter.consume(key, fast)).allowed).toBe(false);
-    await new Promise((r) => setTimeout(r, 120));
-    expect((await limiter.consume(key, fast)).allowed).toBe(true);
+    // Two tokens a second, so a token takes 500ms. The previous version used
+    // twenty a second -- a token every 50ms -- and the second call below then
+    // depended on two database round trips completing inside 50ms. It did
+    // locally and failed on a slower CI runner, which is a flaky test rather
+    // than a finding about the limiter.
+    const slow = { capacity: 1, refillPerSecond: 2 };
+    expect((await limiter.consume(key, slow)).allowed).toBe(true);
+    // Immediately exhausted: nowhere near 500ms has passed.
+    expect((await limiter.consume(key, slow)).allowed).toBe(false);
+    // And comfortably past one token's worth of time, it admits again.
+    await new Promise((r) => setTimeout(r, 800));
+    expect((await limiter.consume(key, slow)).allowed).toBe(true);
   });
 });

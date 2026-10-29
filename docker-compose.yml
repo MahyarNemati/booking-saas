@@ -13,7 +13,11 @@
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      # Named explicitly rather than relying on the last stage, because
+      # adding a stage after it silently changes what this builds.
+      target: runtime
     ports: ["3000:3000"]
     environment: &app-env
       DATABASE_URL: "postgres://booking:booking@postgres:5432/booking"

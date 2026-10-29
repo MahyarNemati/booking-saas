@@ -350,6 +350,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          # Named for the same reason compose names it: the default is
+          # whatever stage happens to be last.
+          target: runtime
           push: false
           load: true
           tags: booking-saas:ci

@@ -1,0 +1,39 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request for the patch bumps; the interesting ones arrive on
+      # their own.
+      patch:
+        update-types: [patch]
+    ignore:
+      # esbuild is reachable here only through drizzle-kit's `@esbuild-kit`
+      # chain, and there is no patched version inside drizzle-kit's range --
+      # so Dependabot opens a security update it cannot complete, and the
+      # job fails every run.
+      #
+      # The advisory itself is about esbuild's development server accepting
+      # requests from any origin. drizzle-kit is a CLI here: it is invoked to
+      # generate and apply migrations and never starts a server, so the
+      # exposure does not exist in this repository.
+      #
+      # Ignored rather than forced, because `npm audit fix --force` would
+      # downgrade drizzle-kit. Revisit when drizzle-kit moves off
+      # `@esbuild-kit` -- the upstream has already been merged into tsx, so
+      # that is a question of when rather than whether.
+      - dependency-name: esbuild
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly

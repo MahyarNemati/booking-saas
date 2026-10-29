@@ -27,7 +27,7 @@
     "@auth/drizzle-adapter": "^1.11.3",
     "@hookform/resolvers": "^6.0.2",
     "drizzle-orm": "^0.45.4",
-    "next": "^15.5.28",
+    "next": "^16.4.3",
     "next-auth": "^5.0.0-beta.32",
     "pino": "^10.4.0",
     "postgres": "^3.4.9",

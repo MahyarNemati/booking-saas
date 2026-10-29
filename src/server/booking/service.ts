@@ -42,6 +42,7 @@ import { recordAudit, type RequestMeta } from "@/server/audit";
 import { assertWithinLimit } from "@/server/billing/plans";
 import { getEntitlements } from "@/server/billing/service";
 import { assertCan, type Actor } from "@/server/rbac";
+import { cancelReminders, scheduleReminders } from "@/server/reminders/service";
 import { appointmentsThisMonth } from "./catalogue";
 import {
   BLOCKING_STATUSES,
@@ -93,6 +94,17 @@ async function loadService(
       serviceId,
     });
   return row;
+}
+
+/** The organization's reminder offsets, in minutes before the appointment. */
+async function reminderOffsets(db: Executor, orgId: string): Promise<number[]> {
+  const [org] = await db
+    .select({ offsets: organizations.reminderOffsetsMinutes })
+    .from(organizations)
+    .where(eq(organizations.id, orgId));
+  // A business that has cleared its offsets wants no reminders, which is a
+  // legitimate choice and not a reason to fall back to a default.
+  return org?.offsets ?? [];
 }
 
 async function businessTimeZone(db: Executor, orgId: string): Promise<string> {
@@ -270,7 +282,7 @@ export async function book(
     });
   }
 
-  const customerId = await upsertCustomer(db, input.orgId, input.customer);
+  const customer = await upsertCustomer(db, input.orgId, input.customer);
 
   const requiresPayment = service.requiresPayment && service.priceMinor > 0;
   const depositMinor = requiresPayment
@@ -284,7 +296,7 @@ export async function book(
         orgId: input.orgId,
         serviceId: service.id,
         staffId,
-        customerId,
+        customerId: customer.id,
         startsAt: new Date(input.startsAt),
         endsAt: new Date(endsAt),
         // Copied from the service, not referenced: changing the service's
@@ -304,6 +316,25 @@ export async function book(
       })
       .returning();
     if (!row) throw new AppError("conflict", "the booking was not created");
+
+    // The channels come from the *resolved* customer rather than from this
+    // request. A returning customer who gave a phone number last time can be
+    // texted even if they left the field blank today, and -- more
+    // importantly -- book and reschedule then agree, instead of one adding
+    // SMS reminders the other never would.
+    //
+    // Reminders are scheduled in the same transaction as the booking. A
+    // separate call afterwards can fail, and a booking with no reminder is a
+    // missed appointment -- the one outcome the whole product exists to
+    // prevent.
+    await scheduleReminders(db, {
+      orgId: input.orgId,
+      appointmentId: row.id,
+      startsAt: input.startsAt,
+      offsetsMinutes: await reminderOffsets(db, input.orgId),
+      channels: customer.phone ? ["sms", "email"] : ["email"],
+      now,
+    });
 
     if (actor.kind !== "public") {
       await recordAudit(db, {
@@ -365,13 +396,17 @@ async function upsertCustomer(
   db: Executor,
   orgId: string,
   input: { name: string; email?: string; phone?: string; timeZone?: string },
-): Promise<string> {
+): Promise<{ id: string; email: string | null; phone: string | null }> {
   const email = input.email?.trim().toLowerCase() || undefined;
   const phone = input.phone?.trim() || undefined;
 
   if (email || phone) {
     const [found] = await db
-      .select({ id: customers.id })
+      .select({
+        id: customers.id,
+        email: customers.email,
+        phone: customers.phone,
+      })
       .from(customers)
       .where(
         and(
@@ -379,7 +414,27 @@ async function upsertCustomer(
           email ? eq(customers.email, email) : eq(customers.phone, phone!),
         ),
       );
-    if (found) return found.id;
+    if (found) {
+      // Fill in a detail the business did not have before -- not overwrite
+      // one. A customer correcting their number does it from the admin
+      // screen; a typo on a booking form must not replace a number that
+      // works.
+      if (phone && !found.phone) {
+        await db
+          .update(customers)
+          .set({ phone })
+          .where(eq(customers.id, found.id));
+        return { ...found, phone };
+      }
+      if (email && !found.email) {
+        await db
+          .update(customers)
+          .set({ email })
+          .where(eq(customers.id, found.id));
+        return { ...found, email };
+      }
+      return found;
+    }
   }
 
   const [created] = await db
@@ -391,10 +446,14 @@ async function upsertCustomer(
       phone: phone ?? null,
       timeZone: input.timeZone ?? null,
     })
-    .returning({ id: customers.id });
+    .returning({
+      id: customers.id,
+      email: customers.email,
+      phone: customers.phone,
+    });
   if (!created)
     throw new AppError("conflict", "the customer record was not created");
-  return created.id;
+  return created;
 }
 
 export interface CancelInput {
@@ -471,6 +530,9 @@ export async function cancel(
     .where(eq(appointments.id, existing.id))
     .returning();
   if (!row) throw new AppError("conflict", "the cancellation was not recorded");
+
+  // Nobody should be reminded about a booking that is not happening.
+  await cancelReminders(db, row.id);
 
   await recordAudit(db, {
     orgId: input.orgId,
@@ -574,6 +636,28 @@ export async function reschedule(
       .where(eq(appointments.id, existing.id))
       .returning();
     if (!row) throw new AppError("conflict", "the reschedule was not recorded");
+
+    // The due times all move with the appointment. scheduleReminders is
+    // idempotent on (appointment, channel, offset), so this updates the
+    // existing rows rather than adding a second set -- and it resets a
+    // reminder that had already been sent for the old time.
+    //
+    // The channels are derived from the customer, exactly as when the booking
+    // was made. Passing both unconditionally would add SMS reminders for a
+    // customer who never gave a phone number, and they would then fail on
+    // every pass until the worker gave up.
+    const [contact] = await db
+      .select({ phone: customers.phone })
+      .from(customers)
+      .where(eq(customers.id, existing.customerId));
+    await scheduleReminders(db, {
+      orgId: input.orgId,
+      appointmentId: row.id,
+      startsAt: input.startsAt,
+      offsetsMinutes: await reminderOffsets(db, input.orgId),
+      channels: contact?.phone ? ["sms", "email"] : ["email"],
+      now,
+    });
 
     await recordAudit(db, {
       orgId: input.orgId,

@@ -508,6 +508,11 @@ export const appointments = pgTable(
 export const reminderChannelEnum = pgEnum("reminder_channel", ["email", "sms"]);
 export const reminderStatusEnum = pgEnum("reminder_status", [
   "scheduled",
+  // Claimed by a worker and in flight. The status plus claimedAt is a lease:
+  // SKIP LOCKED only protects a row for the life of the claiming
+  // transaction, and the message is sent after that commits, so without a
+  // lease a second worker claims the same reminder in the gap.
+  "sending",
   "sent",
   "failed",
   "cancelled",
@@ -536,6 +541,8 @@ export const reminders = pgTable(
     offsetMinutes: integer("offset_minutes").notNull(),
     dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
     status: reminderStatusEnum("status").notNull().default("scheduled"),
+    /** When a worker took this reminder. Null unless it is `sending`. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
     sentAt: timestamp("sent_at", { withTimezone: true }),

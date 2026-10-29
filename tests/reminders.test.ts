@@ -346,20 +346,22 @@ describe.skipIf(!hasDatabase)("reminders", () => {
   });
 
   it("sends the due reminders and records the provider's ids", async () => {
-    const appointment = await makeBooking("2026-06-12 10:00", {
-      phone: "+447700900111",
-    });
+    const phone = "+447700900111";
+    const appointment = await makeBooking("2026-06-12 10:00", { phone });
+
+    // runOnce claims everything due across the database, which is what a
+    // worker should do -- so these assertions are about this appointment
+    // rather than about the batch totals.
     const outcome = await runOnce(db, { sms, email }, logger, {
       now: at("2026-06-12 09:30"),
-      limit: 10,
+      limit: 100,
     });
-    // Two offsets across two channels, all four already past due.
-    expect(outcome.sent).toBe(4);
-    expect(sms.sent).toHaveLength(2);
-    expect(email.sent).toHaveLength(2);
+    expect(outcome.sent).toBeGreaterThanOrEqual(4);
 
+    // Two offsets across two channels, all four already past due.
     const rows = await rowsFor(appointment.id);
-    expect(rows.filter((r) => r.status === "sent")).toHaveLength(4);
+    expect(rows).toHaveLength(4);
+    expect(rows.every((r) => r.status === "sent")).toBe(true);
     expect(rows.every((r) => r.providerMessageId?.startsWith("msg_"))).toBe(
       true,
     );
@@ -367,11 +369,12 @@ describe.skipIf(!hasDatabase)("reminders", () => {
     // The lease is released, so nothing looks in flight afterwards.
     expect(rows.every((r) => r.claimedAt === null)).toBe(true);
 
-    // And a second pass sends nothing more.
-    const again = await runOnce(db, { sms, email }, logger, {
-      now: at("2026-06-12 09:31"),
-    });
-    expect(again.sent).toBe(0);
+    // Both texts really reached the sender, addressed to this customer.
+    expect(sms.sent.filter((m) => m.to === phone)).toHaveLength(2);
+
+    // And a second pass sends this appointment nothing more.
+    await runOnce(db, { sms, email }, logger, { now: at("2026-06-12 09:31") });
+    expect(sms.sent.filter((m) => m.to === phone)).toHaveLength(2);
   });
 
   it("skips a reminder for a booking cancelled behind its back", async () => {

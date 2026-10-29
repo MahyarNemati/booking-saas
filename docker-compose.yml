@@ -1,27 +1,78 @@
+# The whole thing, for trying it out:
+#
+#   docker compose up --build
+#   docker compose run --rm migrate
+#   docker compose run --rm seed
+#   open http://localhost:3000/b/snips
+#
+# The worker is a separate service, not a thread in the web app, for the same
+# reason it is a separate process in development: reminders have to go out
+# whether or not anyone is looking at the site, and a web server can be scaled
+# to zero or restarted on deploy. It is safe to run several of them -- the
+# claim on a reminder is leased.
+
 services:
   app:
     build: .
     ports: ["3000:3000"]
-    environment:
-      DATABASE_URL: "postgres://saas:saas@postgres:5432/saas"
+    environment: &app-env
+      DATABASE_URL: "postgres://booking:booking@postgres:5432/booking"
       AUTH_SECRET: "replace-me-with-at-least-32-characters!!"
       APP_URL: "http://localhost:3000"
       RATE_LIMIT_BACKEND: "postgres"
+      LOG_LEVEL: "info"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+      target: tools
+    command: ["node_modules/.bin/tsx", "src/worker/main.ts"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Run once, by hand. Migrations are deliberately not run on app start: two
+  # instances starting together would both try, and a migration that fails
+  # half way through a rolling deploy is a much worse problem than a manual
+  # step.
+  migrate:
+    build:
+      context: .
+      target: tools
+    command: ["node_modules/.bin/tsx", "src/db/migrate.ts"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  seed:
+    build:
+      context: .
+      target: tools
+    command: ["node_modules/.bin/tsx", "src/db/seed.ts"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: saas
-      POSTGRES_PASSWORD: saas
-      POSTGRES_DB: saas
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U saas -d saas"]
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
       interval: 5s
       timeout: 3s
       retries: 10

@@ -13,6 +13,7 @@ COPY . .
 # values come from the runtime environment.
 ENV DATABASE_URL="postgres://build:build@localhost:5432/build" \
     AUTH_SECRET="build-time-placeholder-at-least-32-chars" \
+    RATE_LIMIT_BACKEND="postgres" \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
@@ -27,3 +28,24 @@ COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+# The worker, the migration runner and the seed script need the TypeScript
+# sources and the dev dependencies, which the runtime stage above deliberately
+# does not carry -- the point of `output: standalone` is an image with only
+# what serves requests.
+#
+# A second target rather than bloating the first: the web image stays minimal
+# and the tools image is only pulled where it is actually used. Both are built
+# from the same sources, so they cannot drift.
+FROM node:26-alpine AS tools
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json tsconfig.json ./
+COPY src ./src
+COPY drizzle ./drizzle
+RUN addgroup -g 1001 nodejs && adduser -D -u 1001 -G nodejs worker
+USER worker
+# Overridden per service in docker-compose.yml; the worker is the default
+# because it is the one that runs continuously.
+CMD ["node_modules/.bin/tsx", "src/worker/main.ts"]

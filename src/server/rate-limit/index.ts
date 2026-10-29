@@ -114,4 +114,12 @@ export const POLICIES = {
   api: { capacity: 60, refillPerSecond: 1 },
   signIn: { capacity: 5, refillPerSecond: 1 / 60 },
   invite: { capacity: 20, refillPerSecond: 20 / 3600 },
+  /**
+   * The public booking form: a free, unauthenticated write endpoint, which is
+   * the kind that gets abused. The burst allows for a customer correcting a
+   * mistake and resubmitting; the slow refill means a script does not get far.
+   */
+  publicBooking: { capacity: 8, refillPerSecond: 8 / 3600 },
+  /** Looking at slots is cheap but not free, and a scraper is still a cost. */
+  publicAvailability: { capacity: 120, refillPerSecond: 1 },
 } satisfies Record<string, RateLimitPolicy>;

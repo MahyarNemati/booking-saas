@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "SaaS Starter", template: "%s | SaaS Starter" },
-  description: "Multi-tenant B2B SaaS starter on Next.js and Postgres.",
+  title: { default: "Booking", template: "%s | Booking" },
+  description: "Appointment booking for local businesses.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

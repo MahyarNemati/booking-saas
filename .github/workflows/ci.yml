@@ -13,6 +13,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PG_USER: booking
+  PG_PASSWORD: booking
+  PG_DB: booking
+
 jobs:
   static:
     name: lint, format and types
@@ -21,7 +26,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -29,18 +34,24 @@ jobs:
       - run: npm run typecheck
 
   test:
-    name: tests against postgres
+    name: tests against postgres (node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The lower bound is what package.json's engines field claims, so it
+        # is tested rather than asserted.
+        node: ["22", "26"]
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: saas
-          POSTGRES_PASSWORD: saas
-          POSTGRES_DB: saas
+          POSTGRES_USER: booking
+          POSTGRES_PASSWORD: booking
+          POSTGRES_DB: booking
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U saas -d saas"
+          --health-cmd "pg_isready -U booking -d booking"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
@@ -48,84 +59,269 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
 
       # TEST_DATABASE_URL is what switches on the database-backed suites: the
       # global setup creates and drops a throwaway database per run. Without
-      # it they skip silently, which means tests/rls.test.ts -- the suite that
-      # actually proves cross-tenant isolation, the headline feature -- would
-      # never run. Keep this set.
-      - name: Test (including RLS, webhooks, API keys and rate limiting)
+      # it they skip silently -- and the suites that prove the headline
+      # guarantees (tenant isolation, and that two customers cannot be sold
+      # the same slot) are all database-backed. Keep this set.
+      - name: Test
         env:
-          TEST_DATABASE_URL: "postgres://saas:saas@localhost:5432/postgres"
-          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
+          TEST_DATABASE_URL: "postgres://booking:booking@localhost:5432/postgres"
+          DATABASE_URL: "postgres://booking:booking@localhost:5432/booking"
           AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
         run: npm test -- --reporter=verbose --reporter=json --outputFile=vitest-results.json
 
-      # A skipped suite looks identical to a passing one in the summary. The
-      # RLS suite is the one that proves the headline guarantee, so assert it
-      # actually executed rather than trusting a green tick.
-      - name: Assert the RLS suite really ran
+      # A skipped suite looks identical to a passing one in the summary, so
+      # the suites that prove the guarantees are checked by name. Without
+      # this, losing TEST_DATABASE_URL turns the most important tests in the
+      # repository into a green tick that means nothing.
+      - name: Assert the database-backed suites really ran
         run: |
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
-            const r = JSON.parse(readFileSync("vitest-results.json", "utf8"));
-            const files = r.testResults ?? [];
-            const rls = files.filter((f) => /rls/.test(f.name ?? ""));
-            if (rls.length === 0) {
-              console.error("::error::no RLS test file found in the results");
-              process.exit(1);
+            const report = JSON.parse(readFileSync("vitest-results.json", "utf8"));
+            const files = report.testResults ?? [];
+            const required = ["rls", "booking", "payments", "reminders"];
+            let bad = false;
+            for (const name of required) {
+              const matching = files.filter((f) => new RegExp(`tests/${name}\\.test`).test(f.name ?? ""));
+              if (matching.length === 0) {
+                console.error(`::error::no ${name} test file in the results`);
+                bad = true;
+                continue;
+              }
+              const assertions = matching.flatMap((f) => f.assertionResults ?? []);
+              const passed = assertions.filter((a) => a.status === "passed").length;
+              const skipped = assertions.filter((a) => a.status === "pending").length;
+              console.log(`${name}: ${passed} passed, ${skipped} skipped`);
+              if (passed === 0 || skipped > 0) {
+                console.error(`::error::the ${name} suite did not run against Postgres`);
+                bad = true;
+              }
             }
-            const assertions = rls.flatMap((f) => f.assertionResults ?? []);
-            const ran = assertions.filter((a) => a.status === "passed").length;
-            const skipped = assertions.filter((a) => a.status === "pending").length;
-            console.log(`RLS suite: ${ran} passed, ${skipped} skipped`);
-            if (ran === 0 || skipped > 0) {
-              console.error("::error::the RLS suite did not run against Postgres");
-              process.exit(1);
-            }
+            process.exit(bad ? 1 : 0);
           '
 
   migrations:
-    name: migrations apply cleanly
+    name: migrations and constraints
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: saas
-          POSTGRES_PASSWORD: saas
-          POSTGRES_DB: saas
+          POSTGRES_USER: booking
+          POSTGRES_PASSWORD: booking
+          POSTGRES_DB: booking
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U saas -d saas"
+          --health-cmd "pg_isready -U booking -d booking"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+    env:
+      DATABASE_URL: "postgres://booking:booking@localhost:5432/booking"
+      AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
       - run: npm ci
-      - name: Apply migrations
-        env:
-          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
-          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+      - name: Apply migrations to an empty database
         run: npm run db:migrate
+
       # Drizzle should report no pending changes: a schema edit without a
       # generated migration is a deploy-time surprise.
       - name: Schema and migrations are in sync
-        env:
-          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
-          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
         run: |
           npm run db:generate
           git diff --exit-code drizzle/ \
             || { echo "::error::schema changed without a committed migration"; exit 1; }
+
+      # The exclusion constraint is the mechanism that makes double booking
+      # impossible, and it lives in a hand-written migration rather than in
+      # the schema file -- which is exactly the sort of thing that can be lost
+      # in a regenerate. Assert the migrated database really has it.
+      - name: The constraints that matter are present
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -tAc "
+            select conname from pg_constraint
+            where conrelid = 'appointments'::regclass and contype = 'x'
+            order by conname
+          " > exclusions.txt
+          cat exclusions.txt
+          grep -qx 'appointments_no_double_booking' exclusions.txt \
+            || { echo '::error::the per-staff exclusion constraint is missing'; exit 1; }
+          grep -qx 'appointments_customer_no_overlap' exclusions.txt \
+            || { echo '::error::the per-customer exclusion constraint is missing'; exit 1; }
+          # And the generated range it depends on, with the trigger that fills
+          # the columns it is built from.
+          generated=$(psql "$DATABASE_URL" -tAc "
+            select count(*) from pg_attribute
+            where attrelid = 'appointments'::regclass
+              and attname = 'during' and attgenerated <> ''
+          ")
+          [ "$generated" = "1" ] \
+            || { echo '::error::appointments.during is not a generated column'; exit 1; }
+          psql "$DATABASE_URL" -tAc "
+            select tgname from pg_trigger
+            where tgrelid = 'appointments'::regclass and not tgisinternal
+          " | grep -q appointments_block_trigger \
+            || { echo '::error::the block trigger is missing'; exit 1; }
+          # Row-level security on every tenant-scoped table.
+          missing=$(psql "$DATABASE_URL" -tAc "
+            select string_agg(c.relname, ', ')
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and c.relkind = 'r'
+              and not c.relrowsecurity
+              and c.relname in ('services','staff','staff_services','availability_rules',
+                                'date_overrides','time_off','customers','appointments','reminders')
+          ")
+          if [ -n "$(echo "$missing" | tr -d '[:space:]')" ]; then
+            echo "::error::row-level security is off for: $missing"
+            exit 1
+          fi
+
+      # A double booking really is refused, by the database, with no
+      # application involved. The service layer's own race test is in the
+      # vitest suite; this is the floor underneath it.
+      - name: The database refuses a double booking on its own
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q <<'SQL'
+            insert into organizations (id, name, slug, time_zone)
+              values ('11111111-1111-1111-1111-111111111111','CI','ci','UTC');
+            insert into services (id, org_id, name, slug, duration_minutes)
+              values ('22222222-2222-2222-2222-222222222222','11111111-1111-1111-1111-111111111111','S','s',30);
+            insert into staff (id, org_id, name)
+              values ('33333333-3333-3333-3333-333333333333','11111111-1111-1111-1111-111111111111','A');
+            insert into customers (id, org_id, name)
+              values ('44444444-4444-4444-4444-444444444444','11111111-1111-1111-1111-111111111111','C1'),
+                     ('55555555-5555-5555-5555-555555555555','11111111-1111-1111-1111-111111111111','C2');
+            -- Back to back: both must be accepted, because the range is half open.
+            insert into appointments (org_id, service_id, staff_id, customer_id, starts_at, ends_at, manage_token)
+              values ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222',
+                      '33333333-3333-3333-3333-333333333333','44444444-4444-4444-4444-444444444444',
+                      '2030-01-01 09:00+00','2030-01-01 09:30+00','t1'),
+                     ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222',
+                      '33333333-3333-3333-3333-333333333333','55555555-5555-5555-5555-555555555555',
+                      '2030-01-01 09:30+00','2030-01-01 10:00+00','t2');
+          SQL
+          # And an overlap must not be.
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "
+            insert into appointments (org_id, service_id, staff_id, customer_id, starts_at, ends_at, manage_token)
+            values ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222',
+                    '33333333-3333-3333-3333-333333333333','55555555-5555-5555-5555-555555555555',
+                    '2030-01-01 09:15+00','2030-01-01 09:45+00','t3')
+          " 2>overlap.txt; then
+            echo "::error::an overlapping appointment was accepted"
+            exit 1
+          fi
+          grep -q appointments_no_double_booking overlap.txt \
+            || { echo "::error::refused, but not by the exclusion constraint"; cat overlap.txt; exit 1; }
+          echo "back-to-back accepted, overlap refused by the constraint"
+
+  e2e:
+    name: end to end in a browser
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: booking
+          POSTGRES_PASSWORD: booking
+          POSTGRES_DB: booking
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U booking -d booking"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: "postgres://booking:booking@localhost:5432/booking"
+      E2E_DATABASE_URL: "postgres://booking:booking@localhost:5432/booking"
+      AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+      NEXT_TELEMETRY_DISABLED: "1"
+      RATE_LIMIT_BACKEND: "postgres"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Playwright starts the production server itself, so what the browser
+      # drives is the build that would be deployed.
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  worker:
+    name: the worker runs a pass
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: booking
+          POSTGRES_PASSWORD: booking
+          POSTGRES_DB: booking
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U booking -d booking"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: "postgres://booking:booking@localhost:5432/booking"
+      AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run seed
+      # The worker is a long-running process, so it is started, given time to
+      # complete a pass, and then asked to stop. Checking that it starts and
+      # shuts down cleanly is the part a unit test cannot cover -- and a
+      # worker that cannot start is a product whose reminders never go out.
+      - name: Start, run a pass, stop
+        run: |
+          set -euo pipefail
+          npm run worker > worker.log 2>&1 &
+          pid=$!
+          sleep 8
+          kill -TERM "$pid"
+          # The handler finishes the current pass before exiting, so allow for
+          # that rather than asserting it dies instantly.
+          for _ in $(seq 1 30); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          wait "$pid" || true
+          cat worker.log
+          grep -q "worker started" worker.log || { echo "::error::the worker did not start"; exit 1; }
+          grep -q "worker stopped" worker.log || { echo "::error::the worker did not shut down cleanly"; exit 1; }
+          if grep -qi "worker pass failed" worker.log; then
+            echo "::error::a worker pass failed"
+            exit 1
+          fi
 
   build:
     name: production build
@@ -134,7 +330,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
       - run: npm ci
       - name: next build
@@ -145,13 +341,60 @@ jobs:
         run: npm run build
 
   docker:
-    name: image builds
+    name: images build and the stack comes up
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - name: Build the web image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          tags: saas-starter:ci
+          load: true
+          tags: booking-saas:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build the tools image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: tools
+          push: false
+          load: true
+          tags: booking-saas-tools:ci
+          cache-from: type=gha
+      # The compose file is part of the documented quickstart, so it is run
+      # rather than linted: migrate, seed, and then a request for the seeded
+      # business's booking page. Any of those failing means the instructions
+      # in the README do not work.
+      - name: The documented quickstart works
+        run: |
+          set -euo pipefail
+          docker compose up -d postgres
+          for _ in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U booking -d booking && break
+            sleep 2
+          done
+          docker compose run --rm migrate
+          docker compose run --rm seed
+          docker compose up -d app
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:3000/ >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:3000/b/snips | tee page.html | grep -q "Dry Cut" \
+            || { echo "::error::the seeded booking page did not render"; exit 1; }
+          grep -q "Europe/London" page.html \
+            || { echo "::error::the business time zone is not shown"; exit 1; }
+          # The worker image has to start too.
+          docker compose up -d worker
+          sleep 10
+          docker compose logs worker | grep -q "worker started" \
+            || { echo "::error::the worker container did not start"; docker compose logs worker; exit 1; }
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

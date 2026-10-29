@@ -304,14 +304,16 @@ jobs:
       - name: Start, run a pass, stop
         run: |
           set -euo pipefail
-          # tsx directly, not `npm run worker`: $! would then be npm's pid,
-          # and whether npm forwards SIGTERM to the process it started
-          # depends on the npm version and the platform. It does on macOS
-          # here and did not on this runner, so the worker's handler never
-          # ran and it read as a shutdown bug in the worker rather than in
-          # the test. One process between you and your signal is one too
-          # many.
-          npx tsx src/worker/main.ts > worker.log 2>&1 &
+          # node directly, with tsx as a loader, so $! is the worker itself.
+          #
+          # `npm run worker` makes $! npm's pid, and whether npm forwards
+          # SIGTERM depends on its version and the platform -- it does on
+          # macOS here and did not on this runner, so the worker's handler
+          # never ran and it read as a shutdown bug in the worker rather than
+          # in the test. `npx tsx` has the same shape with two wrappers
+          # instead of one. `node --import tsx` spawns nothing, so there is
+          # no forwarding to depend on.
+          node --import tsx src/worker/main.ts > worker.log 2>&1 &
           pid=$!
           sleep 8
           kill -TERM "$pid"

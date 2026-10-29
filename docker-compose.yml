@@ -34,7 +34,9 @@ services:
     build:
       context: .
       target: tools
-    command: ["node_modules/.bin/tsx", "src/worker/main.ts"]
+    # node directly so SIGTERM from `docker stop` reaches the worker
+    # rather than a wrapper that may or may not forward it.
+    command: ["node", "--import", "tsx", "src/worker/main.ts"]
     environment: *app-env
     depends_on:
       postgres:
@@ -49,7 +51,7 @@ services:
     build:
       context: .
       target: tools
-    command: ["node_modules/.bin/tsx", "src/db/migrate.ts"]
+    command: ["node", "--import", "tsx", "src/db/migrate.ts"]
     environment: *app-env
     depends_on:
       postgres:
@@ -60,7 +62,7 @@ services:
     build:
       context: .
       target: tools
-    command: ["node_modules/.bin/tsx", "src/db/seed.ts"]
+    command: ["node", "--import", "tsx", "src/db/seed.ts"]
     environment: *app-env
     depends_on:
       postgres:

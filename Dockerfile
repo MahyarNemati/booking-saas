@@ -47,7 +47,7 @@ RUN addgroup -g 1001 nodejs && adduser -D -u 1001 -G nodejs worker
 USER worker
 # Overridden per service in docker-compose.yml; the worker is the default
 # because it is the one that runs continuously.
-CMD ["node_modules/.bin/tsx", "src/worker/main.ts"]
+CMD ["node", "--import", "tsx", "src/worker/main.ts"]
 
 FROM node:26-alpine AS runtime
 WORKDIR /app

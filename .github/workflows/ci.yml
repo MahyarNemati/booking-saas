@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: lint, format and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+
+  test:
+    name: tests against postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: saas
+          POSTGRES_PASSWORD: saas
+          POSTGRES_DB: saas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U saas -d saas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # TEST_DATABASE_URL is what switches on the database-backed suites: the
+      # global setup creates and drops a throwaway database per run. Without
+      # it they skip silently, which means tests/rls.test.ts -- the suite that
+      # actually proves cross-tenant isolation, the headline feature -- would
+      # never run. Keep this set.
+      - name: Test (including RLS, webhooks, API keys and rate limiting)
+        env:
+          TEST_DATABASE_URL: "postgres://saas:saas@localhost:5432/postgres"
+          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
+          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+        run: npm test -- --reporter=verbose --reporter=json --outputFile=vitest-results.json
+
+      # A skipped suite looks identical to a passing one in the summary. The
+      # RLS suite is the one that proves the headline guarantee, so assert it
+      # actually executed rather than trusting a green tick.
+      - name: Assert the RLS suite really ran
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const r = JSON.parse(readFileSync("vitest-results.json", "utf8"));
+            const files = r.testResults ?? [];
+            const rls = files.filter((f) => /rls/.test(f.name ?? ""));
+            if (rls.length === 0) {
+              console.error("::error::no RLS test file found in the results");
+              process.exit(1);
+            }
+            const assertions = rls.flatMap((f) => f.assertionResults ?? []);
+            const ran = assertions.filter((a) => a.status === "passed").length;
+            const skipped = assertions.filter((a) => a.status === "pending").length;
+            console.log(`RLS suite: ${ran} passed, ${skipped} skipped`);
+            if (ran === 0 || skipped > 0) {
+              console.error("::error::the RLS suite did not run against Postgres");
+              process.exit(1);
+            }
+          '
+
+  migrations:
+    name: migrations apply cleanly
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: saas
+          POSTGRES_PASSWORD: saas
+          POSTGRES_DB: saas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U saas -d saas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        env:
+          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
+          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+        run: npm run db:migrate
+      # Drizzle should report no pending changes: a schema edit without a
+      # generated migration is a deploy-time surprise.
+      - name: Schema and migrations are in sync
+        env:
+          DATABASE_URL: "postgres://saas:saas@localhost:5432/saas"
+          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+        run: |
+          npm run db:generate
+          git diff --exit-code drizzle/ \
+            || { echo "::error::schema changed without a committed migration"; exit 1; }
+
+  build:
+    name: production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: next build
+        env:
+          DATABASE_URL: "postgres://ci:ci@localhost:5432/ci"
+          AUTH_SECRET: "ci-secret-that-is-at-least-32-characters"
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+
+  docker:
+    name: image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: saas-starter:ci

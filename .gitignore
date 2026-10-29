@@ -1,0 +1,23 @@
+# Anchored with a leading slash so these match only at the repository root:
+# a bare "node_modules" also matches a directory of that name anywhere, and a
+# bare binary name would silently ignore a source directory.
+/node_modules/
+/.next/
+/out/
+/build/
+/coverage/
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
+/tsconfig.tsbuildinfo
+/next-env.d.ts
+
+# Local configuration and secrets.
+.env
+.env*.local
+/.env.production
+
+.DS_Store
+*.pem
+npm-debug.log*
